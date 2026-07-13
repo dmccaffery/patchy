@@ -1,0 +1,26 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+
+config:
+    # House prose wraps at 120 columns.
+    MD013:
+        line_length: 120
+        code_blocks: false
+        tables: false
+    # DESIGN.md uses multiple top-level headings.
+    MD025: false
+    MD041: false
+globs:
+    - "**/*.md"
+
+ignores:
+    # The original spec is kept verbatim.
+    - "DESIGN.md"
+    # Golden test fixtures are generated; byte-stability matters more than style.
+    - "**/testdata/**"
+    - "node_modules/**"
+    - "dist/**"
+    - ".claude/**"
+    - "CHANGELOG.md"
+    # Shared toolchain submodule — linted in its own repo.
+    - ".mise/**"

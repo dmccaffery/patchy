@@ -1,0 +1,20 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# patchy consumes the shared toolchain (bitwise-media-group/toolchain) as the
+# .mise/ submodule: pinned tools + the go-cli task archetype come from there,
+# and the Makefile is a thin forwarder (.mise/mise.mk). Structural knobs live
+# in [vars]; repo-local tasks live in tasks.toml (see [task_config] below).
+
+[vars]
+# patchy is multi-binary (four entrypoints under cmd/), so tasks.toml redefines
+# the archetype's `build` with a loop; app/app_pkg exist only so the archetype's
+# single-app go-build task stays renderable.
+app = "patchy"
+app_pkg = "./cmd/source-controller"
+
+[task_config]
+# Repo-local tasks live in tasks.toml, included AFTER the archetype so its
+# same-named task (build) replaces the archetype's definition — an included
+# file wins over this config's own [tasks] on name collisions.
+includes = [".mise/tasks/go-cli.toml", "tasks.toml"]

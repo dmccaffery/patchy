@@ -1,0 +1,44 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# ---- repo-local tasks (the long tail the library intentionally omits) -------
+
+# The e2e suite is a separate module: it builds the real controller binaries
+# and drives them with recorded webhook fixtures against an in-memory GitHub.
+# No cluster, no credentials, no network.
+[e2e]
+description = "run the end-to-end suite (real binaries, fake GitHub)"
+dir = "{{cwd}}/e2e"
+run = "go test ./... -count=1"
+
+# Deliver a recorded webhook fixture to a locally-running controller, signed
+# with its secret — the local stand-in for GitHub.
+# Example: mise run replay -- -secret-file dev.secret e2e/fixtures/webhooks/issues.opened.json
+[replay]
+description = "sign and deliver a webhook fixture to a running controller"
+dir = "{{cwd}}/e2e"
+run = "go run ./replay"
+
+# Redefines the archetype's build task (whole-task replacement): patchy is
+# multi-binary — one controller per concern plus the agent runtime — so the
+# single-app go-build is replaced by a loop over cmd/. Same ldflags contract as
+# the archetype (and .goreleaser.yaml): version metadata stamped into
+# internal/version.
+[build]
+description = "build all patchy binaries into bin/"
+dir = "{{cwd}}"
+run = """
+set -eu
+module="${MODULE:-$(go list -m)}"
+version="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+commit="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo none)}"
+date="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+ldflags="${LDFLAGS:--s -w \
+  -X $module/internal/version.Version=$version \
+  -X $module/internal/version.Commit=$commit \
+  -X $module/internal/version.BuildDate=$date}"
+mkdir -p bin
+for app in source-controller context-controller remediation-controller agent-runner; do
+  CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o "bin/$app" "./cmd/$app"
+done
+"""

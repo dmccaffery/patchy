@@ -1,0 +1,11 @@
+# Build artifacts
+/bin/
+dist/
+
+# Coverage (make test)
+coverage/
+
+# Claude plans / local settings
+.claude/plans/
+.claude/*.md
+settings.local.json
