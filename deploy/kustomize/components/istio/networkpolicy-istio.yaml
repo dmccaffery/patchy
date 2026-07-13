@@ -1,0 +1,43 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# The mesh's own plumbing, re-permitted through the default-deny in
+# base/networkpolicy.yaml — without this the injected proxy cannot start:
+#
+#   * egress 15012 to istiod: XDS config and workload certificates. Blocked
+#     by default-deny (istiod is a cluster service, inside the CIDRs the
+#     base egress rule excepts).
+#   * ingress 15021: kubelet probes the proxy's readiness endpoint. The base
+#     policy has no ingress rules at all, and kubelet probes arrive from the
+#     node IP, which no pod selector can match — same reasoning as the 8080
+#     rule in the patchy namespace, and equally HMAC-free: 15021 serves only
+#     /healthz/ready.
+#
+# Assumes the control plane lives in istio-system; adjust the selector if
+# yours is revisioned into another namespace.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: patchy-agents-istio
+    namespace: patchy-agents
+    labels:
+        app.kubernetes.io/part-of: patchy
+spec:
+    podSelector:
+        matchLabels:
+            app.kubernetes.io/name: patchy-agent
+            app.kubernetes.io/managed-by: patchy
+    policyTypes: [Ingress, Egress]
+    ingress:
+        - ports:
+              - protocol: TCP
+                port: 15021
+    egress:
+        - to:
+              - namespaceSelector:
+                    matchLabels:
+                        kubernetes.io/metadata.name: istio-system
+          ports:
+              - protocol: TCP
+                port: 15012

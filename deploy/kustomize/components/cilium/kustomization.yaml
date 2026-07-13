@@ -9,7 +9,8 @@
 #
 # The prod overlay does. The dev overlay does not (kind ships kindnet, not
 # Cilium, and a CiliumNetworkPolicy CRD that does not exist would fail the
-# apply).
+# apply). On an Istio mesh use ../istio instead — same allowlist, enforced by
+# the sidecar.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 

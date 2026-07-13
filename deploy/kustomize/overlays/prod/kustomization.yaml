@@ -15,9 +15,10 @@ resources:
     - ../../base
 
 components:
-    # FQDN egress for the agent sandbox. Requires Cilium with DNS policy; drop
-    # this line on any other CNI (base/networkpolicy.yaml still applies, and
-    # is then the whole of the L3/L4 story).
+    # FQDN egress for the agent sandbox. Requires Cilium with DNS policy. On
+    # an Istio mesh swap this for ../../components/istio (never both); with
+    # neither, drop the line (base/networkpolicy.yaml still applies, and is
+    # then the whole of the L3/L4 story).
     - ../../components/cilium
 
 # Digest pinning. PLACEHOLDERS — replace every sha256 below with the digest

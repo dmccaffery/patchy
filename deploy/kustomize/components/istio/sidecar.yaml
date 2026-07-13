@@ -1,0 +1,51 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# Defence in depth for the agent sandbox, for clusters running Istio.
+#
+# What this adds over base/networkpolicy.yaml: hostname matching. A plain
+# NetworkPolicy can only say "TCP 443 to the internet"; REGISTRY_ONLY makes
+# the sidecar drop any outbound connection whose destination is not in the
+# mesh registry, and the only registry entries visible to this namespace are
+# the ServiceEntries beside this file (api.anthropic.com and the GitHub clone
+# hosts). TLS is not terminated — the proxy matches the SNI in the client
+# hello against those hosts and passes the bytes through or blackholes them.
+#
+# WHAT THIS DOES NOT DO — read this before believing the sandbox is airtight:
+#
+#   * Same pod-not-container caveat as the Cilium component: GitHub egress is
+#     needed only by the init container, but the proxy serves the whole pod,
+#     so the agent container can reach the GitHub hosts too — anonymously,
+#     because it holds no credential. Credential absence is the control; this
+#     policy is the belt to its braces.
+#   * Unlike Cilium's DNS proxy, the sidecar does not constrain what names
+#     the pod may RESOLVE (DNS is UDP 53 straight to kube-dns, allowed by
+#     base/networkpolicy.yaml). A prompt-injected agent can still exfiltrate
+#     via DNS queries. Istio's DNS capture does not close this; only a
+#     DNS-filtering resolver or Cilium-style DNS policy does.
+#   * The enforcement point lives INSIDE the pod (iptables redirect to the
+#     proxy). That is sound here because the agent runs as uid 65532 with all
+#     capabilities dropped — it cannot rewrite the redirect — but it is a
+#     weaker vantage point than a CNI enforcing on the node.
+---
+apiVersion: networking.istio.io/v1
+kind: Sidecar
+metadata:
+    name: patchy-agent-egress
+    namespace: patchy-agents
+    labels:
+        app.kubernetes.io/part-of: patchy
+spec:
+    workloadSelector:
+        labels:
+            app.kubernetes.io/name: patchy-agent
+            app.kubernetes.io/managed-by: patchy
+    # Drop anything not in the registry instead of passing it through.
+    outboundTrafficPolicy:
+        mode: REGISTRY_ONLY
+    egress:
+        # Only this namespace's slice of the registry is visible: the
+        # ServiceEntries in serviceentry.yaml (exportTo: ".") and nothing
+        # else — there are no Services in patchy-agents to widen it.
+        - hosts:
+              - ./*

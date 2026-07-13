@@ -21,10 +21,12 @@
 #      GITHUB_TOKEN in reservedEnv so no configuration can smuggle one in.
 #      An agent that reaches github.com reaches it unauthenticated, as the
 #      public internet does.
-#   2. FQDN policy (defence in depth, CNI-dependent). See
+#   2. Hostname policy (defence in depth, infrastructure-dependent). See
 #      ../components/cilium/networkpolicy-cilium.yaml — a CiliumNetworkPolicy
-#      that narrows this same egress to toFQDNs. Enable it wherever the CNI
-#      supports it (the prod overlay does).
+#      that narrows this same egress to toFQDNs — or ../components/istio/ —
+#      the same allowlist as an Istio Sidecar (REGISTRY_ONLY) + ServiceEntries.
+#      Enable whichever your infrastructure supports (the prod overlay picks
+#      cilium).
 #
 # DESIGN.md says the agent gets "no internet access". Taken literally that is
 # impossible: `claude -p` is a network client of api.anthropic.com. What is
