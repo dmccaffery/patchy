@@ -3,6 +3,8 @@
 
 package labels
 
+import "slices"
+
 // transitions is the legal state machine. Each component writes only its own
 // transitions (source-controller sets the initial opened; context-controller
 // owns opened→context-enhanced; remediation-controller owns everything from
@@ -34,12 +36,7 @@ func CanTransition(from, to State) bool {
 	if from == to {
 		return true
 	}
-	for _, next := range transitions[from] {
-		if next == to {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(transitions[from], to)
 }
 
 // Terminal reports whether the state has no outgoing transitions.

@@ -68,9 +68,11 @@ func (c Config) issuePath() string { return filepath.Join(c.Workspace, "input", 
 func (c Config) inputClassification() string {
 	return filepath.Join(c.Workspace, "input", "classification.md")
 }
+
 func (c Config) classificationPath() string {
 	return filepath.Join(c.Workspace, "reports", "classification.md")
 }
+
 func (c Config) remediationPath() string {
 	return filepath.Join(c.Workspace, "reports", "remediation.md")
 }
@@ -100,7 +102,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		DefaultBranch:    get("DEFAULT_BRANCH", "main"),
 	}
 	if list := get("MODEL_ALLOWLIST", cfg.RemediateModel); list != "" {
-		for _, m := range strings.Split(list, ",") {
+		for m := range strings.SplitSeq(list, ",") {
 			if m = strings.TrimSpace(m); m != "" {
 				cfg.ModelAllowlist = append(cfg.ModelAllowlist, m)
 			}

@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func fullSet() Set {
 	return Set{
 		Source:         "ghas",
@@ -23,7 +21,7 @@ func fullSet() Set {
 		Severity:       LevelHigh,
 		Priority:       LevelMedium,
 		Recommendation: RecommendationRemediate,
-		Confidence:     ptr(0.82),
+		Confidence:     new(0.82),
 		TokenBudget:    200000,
 		MaxTurns:       40,
 		Attempts:       1,

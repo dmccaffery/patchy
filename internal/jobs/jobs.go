@@ -163,7 +163,7 @@ func (c *Client) Create(ctx context.Context, spec Spec) (string, error) {
 		Kind:       "Job",
 		Name:       created.Name,
 		UID:        created.UID,
-		Controller: ptrTo(true),
+		Controller: new(true),
 	}}
 	if _, err := secrets.Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
 		return "", fmt.Errorf("jobs: own secret %s: %w", name, err)
@@ -212,15 +212,15 @@ func (c *Client) buildJob(name string, spec Spec) (*batchv1.Job, error) {
 		Spec: batchv1.JobSpec{
 			// Retries are the issue state machine's job, not the Job
 			// controller's.
-			BackoffLimit: ptrTo(int32(0)),
+			BackoffLimit: new(int32(0)),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: maps.Clone(lbls), Annotations: maps.Clone(ann)},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: c.cfg.ServiceAccount,
 					RestartPolicy:      corev1.RestartPolicyNever,
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot:   ptrTo(true),
-						FSGroup:        ptrTo(int64(runAsUser)),
+						RunAsNonRoot:   new(true),
+						FSGroup:        new(int64(runAsUser)),
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 					},
 					Volumes:        volumes(name),
@@ -231,10 +231,10 @@ func (c *Client) buildJob(name string, spec Spec) (*batchv1.Job, error) {
 		},
 	}
 	if c.cfg.Deadline > 0 {
-		job.Spec.ActiveDeadlineSeconds = ptrTo(int64(c.cfg.Deadline.Seconds()))
+		job.Spec.ActiveDeadlineSeconds = new(int64(c.cfg.Deadline.Seconds()))
 	}
 	if c.cfg.TTL > 0 {
-		job.Spec.TTLSecondsAfterFinished = ptrTo(int32(c.cfg.TTL.Seconds()))
+		job.Spec.TTLSecondsAfterFinished = new(int32(c.cfg.TTL.Seconds()))
 	}
 	return job, nil
 }
@@ -342,10 +342,10 @@ func (c *Client) agentEnv(spec Spec) []corev1.EnvVar {
 
 func containerSecurity() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
-		RunAsNonRoot:             ptrTo(true),
-		RunAsUser:                ptrTo(int64(runAsUser)),
-		AllowPrivilegeEscalation: ptrTo(false),
-		ReadOnlyRootFilesystem:   ptrTo(true),
+		RunAsNonRoot:             new(true),
+		RunAsUser:                new(int64(runAsUser)),
+		AllowPrivilegeEscalation: new(false),
+		ReadOnlyRootFilesystem:   new(true),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 	}
@@ -414,5 +414,3 @@ func resourceList(cpu, memory string) (corev1.ResourceList, error) {
 	}
 	return rl, nil
 }
-
-func ptrTo[T any](v T) *T { return &v }

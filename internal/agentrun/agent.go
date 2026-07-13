@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/bitwise-media-group/patchy/internal/envelope"
@@ -319,7 +320,7 @@ func (a *Agent) budgetWatcher(h harness.Harness, budget int) func([]byte) (bool,
 // allowlist and the remediation ceilings, logging every correction.
 func (a *Agent) clamp(cls *report.Classification) remediationParams {
 	p := remediationParams{model: cls.Model, maxTurns: cls.MaxTurns, budget: cls.TokenBudget}
-	if !contains(a.cfg.ModelAllowlist, p.model) {
+	if !slices.Contains(a.cfg.ModelAllowlist, p.model) {
 		a.cfg.Log.Warn("classification model not allowlisted; using default",
 			"suggested", p.model, "default", a.cfg.RemediateModel)
 		p.model = a.cfg.RemediateModel
@@ -431,13 +432,4 @@ func deref[T any](p *T) T {
 		return zero
 	}
 	return *p
-}
-
-func contains(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

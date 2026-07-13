@@ -231,7 +231,7 @@ func TestQueueFull(t *testing.T) {
 	// before demanding a 503.
 	saw503 := false
 	for i := range 4 {
-		body := []byte(fmt.Sprintf(`{"n":%d}`, i))
+		body := fmt.Appendf(nil, `{"n":%d}`, i)
 		status := post(t, url+"/webhook", map[string]string{
 			"X-Hub-Signature-256": sign(secret, body),
 			"X-GitHub-Event":      "issues",
