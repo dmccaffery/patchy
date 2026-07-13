@@ -14,15 +14,16 @@ For _what the system does_, read [DESIGN.md](../DESIGN.md); for _where the code 
 
 ```text
 deploy/
-├── docker/
-│   ├── Dockerfile.controller        # all three controllers (ARG TARGET, ARG RUNTIME)
-│   └── Dockerfile.agent-runner      # the agent image: agent-runner + git + claude CLI
 ├── kustomize/
 │   ├── base/                        # namespaces, RBAC, config, deployments, services, netpol
-│   ├── components/cilium/           # optional: FQDN egress policy for the agent sandbox
+│   ├── components/cilium/           # optional: FQDN egress policy for the agent sandbox (Cilium CNI)
+│   ├── components/istio/            # optional: the same allowlist as a Sidecar + ServiceEntries (Istio mesh)
 │   └── overlays/{dev,prod}/
 └── README.md
 ```
+
+The Dockerfiles live at the repo root: `Dockerfile.controller` (all three controllers, ARG `TARGET` + `RUNTIME`) and
+`Dockerfile.agent-runner` (the agent image: agent-runner + git + claude CLI).
 
 ## What gets deployed where
 
@@ -44,22 +45,23 @@ with `automountServiceAccountToken: false`.
 
 ## Images
 
-One Dockerfile builds all three controllers; `TARGET` picks the binary under `cmd/`:
+All four images are built and published by GoReleaser (`dockers_v2` in `.goreleaser.yaml`) as part of every release:
+multi-arch (`linux/amd64` + `linux/arm64`) manifests pushed to `ghcr.io/bitwise-media-group/patchy/<name>` and tagged
+`vX.Y.Z` + `latest`. GoReleaser compiles the binaries once and hands them to `docker buildx`; the repo-root
+`Dockerfile.*` only assemble the runtime layer (`COPY $TARGETPLATFORM/<binary>`), so they cannot be `docker build`
+directly from the repo. To build images locally, run `make snapshot` (needs docker + buildx) — it produces per-arch
+`ghcr.io/...:v<next>-snapshot-<sha>-<arch>` images without pushing, ready for `kind load docker-image`. Each release
+also uploads `digests.txt` and attests every image digest in it; verify with
+`gh attestation verify --owner bitwise-media-group oci://ghcr.io/bitwise-media-group/patchy/<name>:vX.Y.Z`.
 
-```sh
-docker build -f deploy/docker/Dockerfile.controller \
-  --build-arg TARGET=source-controller \
-  --build-arg VERSION="$(git describe --tags --always)" \
-  --build-arg COMMIT="$(git rev-parse --short HEAD)" \
-  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t ghcr.io/bitwise-media-group/patchy/source-controller:v0.1.0 .
-```
+One Dockerfile builds all three controllers; the per-image `build_args` in `.goreleaser.yaml` set `TARGET` to pick the
+binary and `RUNTIME` to pick the base.
 
-**`remediation-controller` must be built with `--build-arg RUNTIME=git`.** `internal/gitpush` shells out to the `git`
-binary to clone the target repository and push the agent's bundle, so that one image cannot be `distroless/static` —
-`RUNTIME=git` gives it a `debian:12-slim` base with `git` and `ca-certificates`. The other two are pure Go with no
-subprocesses and use the distroless default. Everything runs as uid 65532 with a read-only root filesystem; `/tmp` is an
-`emptyDir` in every pod, which is what makes the read-only rootfs survive `os.MkdirTemp`.
+**`remediation-controller` must be built with `RUNTIME=git`.** `internal/gitpush` shells out to the `git` binary to
+clone the target repository and push the agent's bundle, so that one image cannot be `distroless/static` — `RUNTIME=git`
+gives it a `debian:12-slim` base with `git` and `ca-certificates`. The other two are pure Go with no subprocesses and
+use the distroless default. Everything runs as uid 65532 with a read-only root filesystem; `/tmp` is an `emptyDir` in
+every pod, which is what makes the read-only rootfs survive `os.MkdirTemp`.
 
 The agent image is `node:22-slim` because it must carry the `claude` CLI (`@anthropic-ai/claude-code`, pinned by
 `ARG CLAUDE_VERSION` — Dependabot/renovate should bump it), plus `git` and `/bin/sh` for the init container's clone, and
@@ -159,7 +161,15 @@ by the init container — but a network policy selects pods, not containers, and
 namespace, so the agent container inherits that reach. That is acceptable precisely because of (1): it has nothing to
 authenticate with. Do not mistake the FQDN policy for the boundary; the missing credential is the boundary.
 
-If your CNI is not Cilium, drop the component. The base policy still applies and is then the whole of the L3/L4 story.
+On an Istio mesh, `components/istio` delivers the same allowlist instead: a `Sidecar` with `REGISTRY_ONLY` plus
+`ServiceEntry`s for the same four hosts, matched by SNI. It requires native sidecars (Kubernetes ≥ 1.29, istiod with
+`ENABLE_NATIVE_SIDECARS=true` — a classic sidecar hangs the Job and breaks the init container's clone) and the Istio CNI
+node agent (`patchy-agents` enforces the `restricted` Pod Security Standard, which rejects `istio-init`). Two
+differences from Cilium to keep in mind: the proxy does not constrain what names the pod may resolve, so DNS
+exfiltration stays open; and enforcement lives inside the pod rather than on the node.
+
+If you have neither Cilium nor Istio, drop the components. The base policy still applies and is then the whole of the
+L3/L4 story.
 
 ## Applying
 
@@ -173,8 +183,8 @@ kubectl apply -k deploy/kustomize/overlays/dev
 
 ### dev (kind)
 
-Local `patchy/*:dev` images (`docker build` then `kind load docker-image`), NodePort Services (30080 source, 30081
-context, 30082 remediation — map them with `extraPortMappings` in your kind config and tunnel deliveries in with
+Local `patchy/*:dev` images (`make snapshot`, retag, then `kind load docker-image`), NodePort Services (30080 source,
+30081 context, 30082 remediation — map them with `extraPortMappings` in your kind config and tunnel deliveries in with
 `gh webhook forward` or smee.io), minutes instead of hours (2m accumulation, 2m pickup, 10s reconcile), the static-file
 fake CMDB enhancer mounted from a ConfigMap, and tiny resource requests with no limits.
 
