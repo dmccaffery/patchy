@@ -194,6 +194,23 @@ dockers_v2:
 docker_digest:
     name_template: digests.txt
 
+# ^ref: https://goreleaser.com/customization/sign/docker/
+# Keyless cosign signatures over the pushed container images. The empty
+# `artifacts` default selects exactly the dockers_v2 image artifacts above, and
+# signing targets the immutable digest, not the tag. Signatures are pushed to
+# ghcr as OCI artifacts next to each image. Runs only on publish; `make
+# snapshot` additionally skips it via --skip=sign. Verify with:
+#   cosign verify ghcr.io/bitwise-media-group/patchy/<name>:vX.Y.Z \
+#     --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+#     --certificate-identity-regexp='^https://github.com/bitwise-media-group/github-workflows/'
+docker_signs:
+    - cmd: cosign
+      args:
+          - sign
+          - ${artifact}@${digest}
+          - --yes
+      output: true
+
 # ^ref: https://goreleaser.com/customization/sign/sign/
 # Keyless cosign signatures over each built binary; the reusable release workflow
 # supplies the GitHub Actions OIDC token. `make snapshot` skips this (--skip=sign).
