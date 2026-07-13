@@ -47,6 +47,7 @@ nav = [
 [project.theme]
 name = "material"
 custom_dir = "overrides"
+favicon = "assets/images/favicon.svg"
 features = [
   "navigation.instant",
   "navigation.tracking",
