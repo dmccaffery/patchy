@@ -31,24 +31,34 @@ kubectl -n patchy create secret generic patchy-github-app \
 kubectl -n patchy create secret generic patchy-webhook-secret \
   --from-literal=secret="$WEBHOOK_SECRET"
 
-# The model API key — in the AGENT namespace; the chart creates it on first
+# The model credential — in the AGENT namespace; the chart creates it on first
 # install, so pre-create the namespace if you want the secret in place first
 kubectl create namespace patchy-agents --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n patchy-agents create secret generic patchy-anthropic \
   --from-literal=api-key="$ANTHROPIC_API_KEY"
 ```
 
-| Secret                  | Namespace       | Keys                        | Consumed by                                     |
-| ----------------------- | --------------- | --------------------------- | ----------------------------------------------- |
-| `patchy-github-app`     | `patchy`        | `app-id`, `private-key.pem` | All three controllers                           |
-| `patchy-webhook-secret` | `patchy`        | `secret`                    | All three controllers (webhook HMAC validation) |
-| `patchy-anthropic`      | `patchy-agents` | `api-key`                   | Agent Job pods only (`ANTHROPIC_API_KEY`)       |
+No Anthropic API key? A Claude subscription works too: mint a long-lived OAuth token with
+[`claude setup-token`](https://code.claude.com/docs/en/cli-reference), store it in the same secret, and set
+`anthropic.secretEnv: CLAUDE_CODE_OAUTH_TOKEN` (Helm) or `PATCHY_ANTHROPIC_SECRET_ENV=CLAUDE_CODE_OAUTH_TOKEN`
+(kustomize) so the Job builder injects it under the env var the `claude` CLI expects:
+
+```sh
+kubectl -n patchy-agents create secret generic patchy-anthropic \
+  --from-literal=api-key="$(claude setup-token)"
+```
+
+| Secret                  | Namespace       | Keys                        | Consumed by                                                                                       |
+| ----------------------- | --------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `patchy-github-app`     | `patchy`        | `app-id`, `private-key.pem` | All three controllers                                                                             |
+| `patchy-webhook-secret` | `patchy`        | `secret`                    | All three controllers (webhook HMAC validation)                                                   |
+| `patchy-anthropic`      | `patchy-agents` | `api-key`                   | Agent Job pods only (`ANTHROPIC_API_KEY`, or `CLAUDE_CODE_OAUTH_TOKEN` via `anthropic.secretEnv`) |
 
 !!! warning "The Anthropic secret is not optional"
 
-    The Job builder wires `ANTHROPIC_API_KEY` into every agent pod via a `secretKeyRef`. A missing
-    `patchy-anthropic` secret means every agent Job sits in `CreateContainerConfigError` — even with the fake
-    harness.
+    The Job builder wires the credential (`ANTHROPIC_API_KEY` by default) into every agent pod via a
+    `secretKeyRef`. A missing `patchy-anthropic` secret means every agent Job sits in
+    `CreateContainerConfigError` — even with the fake harness.
 
 There is deliberately **no** GitHub credential in the agent namespace: the remediation-controller mints a short-lived,
 single-repo clone token per Job, and it reaches only the init container. See the

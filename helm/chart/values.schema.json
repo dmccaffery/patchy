@@ -113,10 +113,14 @@
         "anthropic": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["secret", "secretKey"],
+            "required": ["secret", "secretKey", "secretEnv"],
             "properties": {
                 "secret": { "type": "string" },
-                "secretKey": { "type": "string" }
+                "secretKey": { "type": "string" },
+                "secretEnv": {
+                    "type": "string",
+                    "enum": ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"]
+                }
             }
         },
         "webhook": {

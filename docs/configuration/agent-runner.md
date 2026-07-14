@@ -49,12 +49,12 @@ Malformed values fail fast with an error naming the exact `PATCHY_<KEY>`.
 
 <div class="nowrap-first" markdown>
 
-| Env                       | Container | Source                                                                                 |
-| ------------------------- | --------- | -------------------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`            | init only | Per-Job Secret; short-lived, single-repo, read-only clone token. Unset after the clone |
-| `ANTHROPIC_API_KEY`       | agent     | `patchy-anthropic` Secret via `secretKeyRef`                                           |
-| `CLAUDE_CODE_OAUTH_TOKEN` | agent     | Alternative `claude` CLI credential (checked after the API key)                        |
-| `ANTHROPIC_AUTH_TOKEN`    | agent     | Alternative `claude` CLI credential                                                    |
+| Env                       | Container | Source                                                                                                     |
+| ------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`            | init only | Per-Job Secret; short-lived, single-repo, read-only clone token. Unset after the clone                     |
+| `ANTHROPIC_API_KEY`       | agent     | `patchy-anthropic` Secret via `secretKeyRef` (the default `--anthropic-secret-env`)                        |
+| `CLAUDE_CODE_OAUTH_TOKEN` | agent     | The same Secret when `--anthropic-secret-env=CLAUDE_CODE_OAUTH_TOKEN` — a `claude setup-token` OAuth token |
+| `ANTHROPIC_AUTH_TOKEN`    | agent     | Alternative `claude` CLI credential (selectable the same way)                                              |
 
 </div>
 

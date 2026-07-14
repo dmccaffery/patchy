@@ -66,6 +66,7 @@ pinning the agent-runner digest is one edit, not kustomize's two.
 {{- $_ := set $data "PATCHY_AGENT_SERVICE_ACCOUNT" $.Values.agent.serviceAccount }}
 {{- $_ := set $data "PATCHY_ANTHROPIC_SECRET" $.Values.anthropic.secret }}
 {{- $_ := set $data "PATCHY_ANTHROPIC_SECRET_KEY" $.Values.anthropic.secretKey }}
+{{- $_ := set $data "PATCHY_ANTHROPIC_SECRET_ENV" $.Values.anthropic.secretEnv }}
 {{- $_ := set $data "PATCHY_AGENT_IMAGE" (include "patchy.image" (dict "root" $ "binary" "agent-runner" "image" $.Values.agent.image)) }}
 {{- end }}
 {{- range $k, $v := $g.extra }}

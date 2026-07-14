@@ -23,19 +23,20 @@ global.
 
 ### Global: images, GitHub, Anthropic
 
-| Key                    | Default                              | Purpose                                                            |
-| ---------------------- | ------------------------------------ | ------------------------------------------------------------------ |
-| `image.repository`     | `ghcr.io/bitwise-media-group/patchy` | Repository prefix (registry included); the binary name is appended |
-| `image.tag`            | `""`                                 | Empty = `v<appVersion>`                                            |
-| `image.pullPolicy`     | `IfNotPresent`                       |                                                                    |
-| `image.pullSecrets`    | `[]`                                 |                                                                    |
-| `commonLabels`         | `{}`                                 | Extra labels on every rendered object                              |
-| `commonAnnotations`    | `{}`                                 | Extra annotations on every rendered object, pods included          |
-| `github.appSecret`     | `patchy-github-app`                  | Secret (release ns) with `app-id` + `private-key.pem`              |
-| `github.webhookSecret` | `patchy-webhook-secret`              | Secret (release ns) with `secret` (webhook HMAC)                   |
-| `github.baseURL`       | `""`                                 | GHES API base URL, e.g. `https://ghes.example.com/api/v3`          |
-| `anthropic.secret`     | `patchy-anthropic`                   | Secret (**agent** ns) with the model API key                       |
-| `anthropic.secretKey`  | `api-key`                            | Key within it                                                      |
+| Key                    | Default                              | Purpose                                                                                     |
+| ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `image.repository`     | `ghcr.io/bitwise-media-group/patchy` | Repository prefix (registry included); the binary name is appended                          |
+| `image.tag`            | `""`                                 | Empty = `v<appVersion>`                                                                     |
+| `image.pullPolicy`     | `IfNotPresent`                       |                                                                                             |
+| `image.pullSecrets`    | `[]`                                 |                                                                                             |
+| `commonLabels`         | `{}`                                 | Extra labels on every rendered object                                                       |
+| `commonAnnotations`    | `{}`                                 | Extra annotations on every rendered object, pods included                                   |
+| `github.appSecret`     | `patchy-github-app`                  | Secret (release ns) with `app-id` + `private-key.pem`                                       |
+| `github.webhookSecret` | `patchy-webhook-secret`              | Secret (release ns) with `secret` (webhook HMAC)                                            |
+| `github.baseURL`       | `""`                                 | GHES API base URL, e.g. `https://ghes.example.com/api/v3`                                   |
+| `anthropic.secret`     | `patchy-anthropic`                   | Secret (**agent** ns) with the model credential                                             |
+| `anthropic.secretKey`  | `api-key`                            | Key within it                                                                               |
+| `anthropic.secretEnv`  | `ANTHROPIC_API_KEY`                  | Env var it is injected as; `CLAUDE_CODE_OAUTH_TOKEN` for a `claude setup-token` OAuth token |
 
 Per-component image overrides win key-by-key, and a `digest` pins over any tag: `<controller>.image` and `agent.image` —
 the latter is the agent-runner image the remediation-controller stamps into every agent Job (`PATCHY_AGENT_IMAGE`).

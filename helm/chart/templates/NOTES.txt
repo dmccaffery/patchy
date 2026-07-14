@@ -8,8 +8,9 @@ Nothing works until the three out-of-band Secrets exist:
   2. {{ .Values.github.webhookSecret }} (namespace {{ .Release.Namespace }})
      key: secret — the webhook HMAC secret configured on the App.
   3. {{ .Values.anthropic.secret }} (namespace {{ .Values.agent.namespace }})
-     key: {{ .Values.anthropic.secretKey }} — the model API key. Without it every
-     agent Job pod fails with CreateContainerConfigError.
+     key: {{ .Values.anthropic.secretKey }} — the model credential, injected as
+     {{ .Values.anthropic.secretEnv }}. Without it every agent Job pod fails
+     with CreateContainerConfigError.
 
 See deploy/kustomize/base/secrets.example.yaml in the patchy repository for
 the exact shapes and kubectl one-liners.

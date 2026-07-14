@@ -85,8 +85,12 @@ type Config struct {
 	ServiceAccount     string        // pod service account
 	Deadline           time.Duration // activeDeadlineSeconds
 	TTL                time.Duration // ttlSecondsAfterFinished
-	AnthropicSecret    string        // name of the Secret holding the model API key
+	AnthropicSecret    string        // name of the Secret holding the model credential
 	AnthropicSecretKey string        // key within it (default "api-key")
+	// AnthropicSecretEnv is the env var the credential is injected into the
+	// agent container as: ANTHROPIC_API_KEY (the default) for an API key, or
+	// CLAUDE_CODE_OAUTH_TOKEN for a `claude setup-token` OAuth token.
+	AnthropicSecretEnv string
 	// Env is extra PATCHY_* configuration passed through to every runner
 	// (models, timeouts, ceilings, thresholds, harness selection).
 	Env map[string]string
@@ -122,6 +126,9 @@ type Client struct {
 func New(cs kubernetes.Interface, cfg Config, log *slog.Logger) *Client {
 	if cfg.AnthropicSecretKey == "" {
 		cfg.AnthropicSecretKey = "api-key"
+	}
+	if cfg.AnthropicSecretEnv == "" {
+		cfg.AnthropicSecretEnv = "ANTHROPIC_API_KEY"
 	}
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -298,16 +305,20 @@ func (c *Client) agentContainer(spec Spec, res corev1.ResourceRequirements) core
 
 // reservedEnv are the names Create owns; Config.Env entries with these names
 // are ignored so per-Job values (and the no-GitHub-token invariant) always
-// win.
+// win. Every claude credential channel is reserved regardless of which one
+// AnthropicSecretEnv selects — credentials reach the pod only via the
+// secretKeyRef, never as a plaintext value in the Job spec.
 var reservedEnv = map[string]bool{
-	"HOME":                  true,
-	"PATCHY_WORKSPACE":      true,
-	"PATCHY_REPO":           true,
-	"PATCHY_ISSUE":          true,
-	"PATCHY_PHASE":          true,
-	"PATCHY_DEFAULT_BRANCH": true,
-	"ANTHROPIC_API_KEY":     true,
-	"GITHUB_TOKEN":          true,
+	"HOME":                    true,
+	"PATCHY_WORKSPACE":        true,
+	"PATCHY_REPO":             true,
+	"PATCHY_ISSUE":            true,
+	"PATCHY_PHASE":            true,
+	"PATCHY_DEFAULT_BRANCH":   true,
+	"ANTHROPIC_API_KEY":       true,
+	"CLAUDE_CODE_OAUTH_TOKEN": true,
+	"ANTHROPIC_AUTH_TOKEN":    true,
+	"GITHUB_TOKEN":            true,
 }
 
 func (c *Client) agentEnv(spec Spec) []corev1.EnvVar {
@@ -332,7 +343,7 @@ func (c *Client) agentEnv(spec Spec) []corev1.EnvVar {
 		env = append(env, corev1.EnvVar{Name: k, Value: c.cfg.Env[k]})
 	}
 
-	return append(env, corev1.EnvVar{Name: "ANTHROPIC_API_KEY", ValueFrom: &corev1.EnvVarSource{
+	return append(env, corev1.EnvVar{Name: c.cfg.AnthropicSecretEnv, ValueFrom: &corev1.EnvVarSource{
 		SecretKeyRef: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: c.cfg.AnthropicSecret},
 			Key:                  c.cfg.AnthropicSecretKey,

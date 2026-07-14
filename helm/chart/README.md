@@ -25,11 +25,11 @@ refuses to own them. See
 [`deploy/kustomize/base/secrets.example.yaml`](../../deploy/kustomize/base/secrets.example.yaml) for shapes and
 one-liners:
 
-| Secret                  | Namespace         | Keys                        | What                                 |
-| ----------------------- | ----------------- | --------------------------- | ------------------------------------ |
-| `patchy-github-app`     | release namespace | `app-id`, `private-key.pem` | The GitHub App identity              |
-| `patchy-webhook-secret` | release namespace | `secret`                    | The webhook HMAC secret              |
-| `patchy-anthropic`      | `patchy-agents`   | `api-key`                   | The model API key for the agent Jobs |
+| Secret                  | Namespace         | Keys                        | What                                                                                                                                                      |
+| ----------------------- | ----------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `patchy-github-app`     | release namespace | `app-id`, `private-key.pem` | The GitHub App identity                                                                                                                                   |
+| `patchy-webhook-secret` | release namespace | `secret`                    | The webhook HMAC secret                                                                                                                                   |
+| `patchy-anthropic`      | `patchy-agents`   | `api-key`                   | The model credential for the agent Jobs — an Anthropic API key, or a `claude setup-token` OAuth token with `anthropic.secretEnv: CLAUDE_CODE_OAUTH_TOKEN` |
 
 The GitHub App has exactly one webhook URL; point it at `https://<webhook.host>/webhook` and enable one flavour of the
 chart's entry point — `webhook.ingress` (plain Ingress, works anywhere) or `webhook.httpRoute` (Gateway API). Both front

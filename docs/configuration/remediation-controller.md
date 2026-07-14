@@ -16,20 +16,21 @@ All [shared flags](index.md#shared-flags-all-three-controllers), plus:
 
 <div class="nowrap-first" markdown>
 
-| Flag                      | Env                            | Default            | Purpose                                                             |
-| ------------------------- | ------------------------------ | ------------------ | ------------------------------------------------------------------- |
-| `--agent-image`           | `PATCHY_AGENT_IMAGE`           | —                  | agent-runner container image. **Required**                          |
-| `--issue-min-age`         | `PATCHY_ISSUE_MIN_AGE`         | `1h`               | How old a finding must be before pickup                             |
-| `--max-attempts`          | `PATCHY_MAX_ATTEMPTS`          | `2`                | Agent-Job attempts per finding before handing to a human            |
-| `--confidence-threshold`  | `PATCHY_CONFIDENCE_THRESHOLD`  | `0.75`             | Classification confidence required for automated remediation        |
-| `--agent-namespace`       | `PATCHY_AGENT_NAMESPACE`       | `patchy-agents`    | Namespace the agent Jobs run in                                     |
-| `--agent-service-account` | `PATCHY_AGENT_SERVICE_ACCOUNT` | `patchy-agent`     | ServiceAccount for the agent pods                                   |
-| `--anthropic-secret`      | `PATCHY_ANTHROPIC_SECRET`      | `patchy-anthropic` | Secret (agent namespace) holding the model API key                  |
-| `--anthropic-secret-key`  | `PATCHY_ANTHROPIC_SECRET_KEY`  | `api-key`          | Key within that Secret                                              |
-| `--job-deadline`          | `PATCHY_JOB_DEADLINE`          | `1h`               | `activeDeadlineSeconds` for an agent Job                            |
-| `--job-ttl`               | `PATCHY_JOB_TTL`               | `1h`               | `ttlSecondsAfterFinished` for a finished Job                        |
-| `--model-allowlist`       | `PATCHY_MODEL_ALLOWLIST`       | `claude-sonnet-5`  | Models the classifier may request for remediation (comma-separated) |
-| `--kubeconfig`            | `PATCHY_KUBECONFIG`            | —                  | Kubeconfig path; empty = in-cluster config                          |
+| Flag                      | Env                            | Default             | Purpose                                                                                                 |
+| ------------------------- | ------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `--agent-image`           | `PATCHY_AGENT_IMAGE`           | —                   | agent-runner container image. **Required**                                                              |
+| `--issue-min-age`         | `PATCHY_ISSUE_MIN_AGE`         | `1h`                | How old a finding must be before pickup                                                                 |
+| `--max-attempts`          | `PATCHY_MAX_ATTEMPTS`          | `2`                 | Agent-Job attempts per finding before handing to a human                                                |
+| `--confidence-threshold`  | `PATCHY_CONFIDENCE_THRESHOLD`  | `0.75`              | Classification confidence required for automated remediation                                            |
+| `--agent-namespace`       | `PATCHY_AGENT_NAMESPACE`       | `patchy-agents`     | Namespace the agent Jobs run in                                                                         |
+| `--agent-service-account` | `PATCHY_AGENT_SERVICE_ACCOUNT` | `patchy-agent`      | ServiceAccount for the agent pods                                                                       |
+| `--anthropic-secret`      | `PATCHY_ANTHROPIC_SECRET`      | `patchy-anthropic`  | Secret (agent namespace) holding the model credential                                                   |
+| `--anthropic-secret-key`  | `PATCHY_ANTHROPIC_SECRET_KEY`  | `api-key`           | Key within that Secret                                                                                  |
+| `--anthropic-secret-env`  | `PATCHY_ANTHROPIC_SECRET_ENV`  | `ANTHROPIC_API_KEY` | Env var the credential is injected as; `CLAUDE_CODE_OAUTH_TOKEN` for a `claude setup-token` OAuth token |
+| `--job-deadline`          | `PATCHY_JOB_DEADLINE`          | `1h`                | `activeDeadlineSeconds` for an agent Job                                                                |
+| `--job-ttl`               | `PATCHY_JOB_TTL`               | `1h`                | `ttlSecondsAfterFinished` for a finished Job                                                            |
+| `--model-allowlist`       | `PATCHY_MODEL_ALLOWLIST`       | `claude-sonnet-5`   | Models the classifier may request for remediation (comma-separated)                                     |
+| `--kubeconfig`            | `PATCHY_KUBECONFIG`            | —                   | Kubeconfig path; empty = in-cluster config                                                              |
 
 </div>
 

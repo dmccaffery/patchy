@@ -31,6 +31,7 @@ func testConfig() Config {
 			"PATCHY_CLASSIFY_MODEL":   "claude-sonnet-5",
 			"PATCHY_CLASSIFY_TIMEOUT": "15m",
 			"GITHUB_TOKEN":            "must-never-pass-through",
+			"CLAUDE_CODE_OAUTH_TOKEN": "must-never-pass-through",
 		},
 		CPURequest:    "500m",
 		MemoryRequest: "1Gi",
@@ -267,6 +268,42 @@ func TestCreateAgentEnv(t *testing.T) {
 	ref := anthropic.ValueFrom.SecretKeyRef
 	if ref.Name != "anthropic" || ref.Key != "api-key" {
 		t.Errorf("ANTHROPIC_API_KEY ref = %s/%s, want anthropic/api-key (defaulted)", ref.Name, ref.Key)
+	}
+	// The credential channels not selected stay reserved: the passthrough
+	// CLAUDE_CODE_OAUTH_TOKEN in Config.Env must not reach the pod.
+	if got, ok := envs["CLAUDE_CODE_OAUTH_TOKEN"]; ok {
+		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %+v, want absent (reserved)", got)
+	}
+}
+
+func TestCreateAgentEnvOAuthToken(t *testing.T) {
+	cs := fake.NewClientset()
+	cfg := testConfig()
+	cfg.AnthropicSecretEnv = "CLAUDE_CODE_OAUTH_TOKEN"
+	c := New(cs, cfg, nil)
+
+	name, err := c.Create(context.Background(), testSpec())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	job, err := cs.BatchV1().Jobs("patchy-agents").Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	envs := map[string]corev1.EnvVar{}
+	for _, env := range job.Spec.Template.Spec.Containers[0].Env {
+		envs[env.Name] = env
+	}
+	oauth, ok := envs["CLAUDE_CODE_OAUTH_TOKEN"]
+	if !ok || oauth.ValueFrom == nil || oauth.ValueFrom.SecretKeyRef == nil {
+		t.Fatalf("CLAUDE_CODE_OAUTH_TOKEN = %+v, want a secretKeyRef (not the reserved passthrough literal)", oauth)
+	}
+	ref := oauth.ValueFrom.SecretKeyRef
+	if ref.Name != "anthropic" || ref.Key != "api-key" {
+		t.Errorf("CLAUDE_CODE_OAUTH_TOKEN ref = %s/%s, want anthropic/api-key", ref.Name, ref.Key)
+	}
+	if got, ok := envs["ANTHROPIC_API_KEY"]; ok {
+		t.Errorf("ANTHROPIC_API_KEY = %+v, want absent when the OAuth env is selected", got)
 	}
 }
 

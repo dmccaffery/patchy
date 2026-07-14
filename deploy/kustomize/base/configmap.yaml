@@ -68,6 +68,9 @@ data:
     PATCHY_AGENT_IMAGE: ghcr.io/bitwise-media-group/patchy/agent-runner:latest
     PATCHY_ANTHROPIC_SECRET: patchy-anthropic
     PATCHY_ANTHROPIC_SECRET_KEY: api-key
+    # Env var the credential is injected as: ANTHROPIC_API_KEY for an API
+    # key, or CLAUDE_CODE_OAUTH_TOKEN for a `claude setup-token` OAuth token.
+    PATCHY_ANTHROPIC_SECRET_ENV: ANTHROPIC_API_KEY
     PATCHY_JOB_DEADLINE: 1h
     PATCHY_JOB_TTL: 1h
 

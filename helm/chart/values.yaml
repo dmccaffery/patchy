@@ -48,10 +48,13 @@ github:
 
 anthropic:
     # Secret in the AGENT namespace (agent.namespace, not the release
-    # namespace) holding the model API key. Consumed by the agent Job pods;
-    # if missing, every agent pod fails with CreateContainerConfigError.
+    # namespace) holding the model credential. Consumed by the agent Job
+    # pods; if missing, every agent pod fails with CreateContainerConfigError.
     secret: patchy-anthropic
     secretKey: api-key
+    # Env var the credential is injected as: ANTHROPIC_API_KEY for an API
+    # key, or CLAUDE_CODE_OAUTH_TOKEN for a `claude setup-token` OAuth token.
+    secretEnv: ANTHROPIC_API_KEY
 
 # Settings applied to all three controllers. Each controller renders its own
 # ConfigMap (consumed with envFrom) holding these plus its `config` block, and

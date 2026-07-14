@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/bitwise-media-group/patchy/internal/cli"
 	"github.com/bitwise-media-group/patchy/internal/gitpush"
+	"github.com/bitwise-media-group/patchy/internal/harness"
 	"github.com/bitwise-media-group/patchy/internal/jobs"
 	"github.com/bitwise-media-group/patchy/internal/reconcile"
 	"github.com/bitwise-media-group/patchy/internal/remedctrl"
@@ -40,8 +43,11 @@ func newServeCmd(opts *cli.Options) *cobra.Command {
 	f.String("agent-image", "", "agent-runner container image (required)")
 	f.String("agent-namespace", "patchy-agents", "namespace the agent Jobs run in")
 	f.String("agent-service-account", "patchy-agent", "service account for the agent Jobs")
-	f.String("anthropic-secret", "patchy-anthropic", "Secret holding the model API key")
-	f.String("anthropic-secret-key", "api-key", "key within the model API key Secret")
+	f.String("anthropic-secret", "patchy-anthropic", "Secret holding the model credential")
+	f.String("anthropic-secret-key", "api-key", "key within the model credential Secret")
+	f.String("anthropic-secret-env", "ANTHROPIC_API_KEY",
+		"env var the credential is injected as: ANTHROPIC_API_KEY for an API key, "+
+			"or CLAUDE_CODE_OAUTH_TOKEN for a `claude setup-token` OAuth token")
 	f.Duration("job-deadline", time.Hour, "activeDeadlineSeconds for an agent Job")
 	f.Duration("job-ttl", time.Hour, "ttlSecondsAfterFinished for a finished agent Job")
 	f.String("model-allowlist", "claude-sonnet-5", "models the classifier may request for remediation")
@@ -104,6 +110,11 @@ func serve(ctx context.Context, opts *cli.Options) error {
 	if image == "" {
 		return errors.New("--agent-image (or PATCHY_AGENT_IMAGE) is required")
 	}
+	secretEnv := opts.String("anthropic-secret-env")
+	if !slices.Contains(credentialEnvKeys(), secretEnv) {
+		return fmt.Errorf("--anthropic-secret-env %q is not a credential env var any harness accepts (one of: %s)",
+			secretEnv, strings.Join(credentialEnvKeys(), ", "))
+	}
 	secret, err := opts.WebhookSecret()
 	if err != nil {
 		return err
@@ -125,6 +136,7 @@ func serve(ctx context.Context, opts *cli.Options) error {
 		TTL:                opts.Duration("job-ttl"),
 		AnthropicSecret:    opts.String("anthropic-secret"),
 		AnthropicSecretKey: opts.String("anthropic-secret-key"),
+		AnthropicSecretEnv: secretEnv,
 		Env:                agentEnv(opts),
 	}, log)
 
@@ -149,6 +161,21 @@ func serve(ctx context.Context, opts *cli.Options) error {
 		return err
 	}
 	return nil
+}
+
+// credentialEnvKeys is the union of the credential env vars the builtin
+// harnesses accept, in registry order — the legal values for
+// --anthropic-secret-env.
+func credentialEnvKeys() []string {
+	var keys []string
+	for _, h := range harness.All() {
+		for _, k := range h.EnvKeys() {
+			if !slices.Contains(keys, k) {
+				keys = append(keys, k)
+			}
+		}
+	}
+	return keys
 }
 
 // kubeClient builds the Kubernetes client: in-cluster by default, from a
