@@ -1,0 +1,49 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+
+# Triage for the lint-docker grype gate (.mise/hack/lint-docker.sh), which
+# scans the external base images named in the Dockerfiles' FROM lines.
+#
+# node:24-trixie-slim (node 24.18.0) bundles an npm CLI whose vendored
+# node_modules carry undici 6.26.0 and tar 7.5.15. In the agent image npm runs
+# exactly once, at build time, to install the pinned claude CLI from
+# registry.npmjs.org; npm (and its vendored undici/tar) is not part of the
+# runtime surface — the Job's containers execute agent-runner, claude, git and
+# sh only. npm ships the fixes in 11.17.0+ (undici 6.27.0, tar 7.5.16), so the
+# next upstream node 24.x image rebuild clears these; Dependabot's docker
+# digest bumps will pull it in.
+#
+# DELETE these entries when the node base digest bump lands and the scan is
+# clean without them. Every rule is pinned to the vulnerable version and the
+# npm CLI's vendored path so a reintroduction elsewhere still fails the gate.
+ignore:
+    - vulnerability: GHSA-vxpw-j846-p89q
+      package:
+          name: undici
+          version: 6.26.0
+          type: npm
+          location: /usr/local/lib/node_modules/npm/node_modules/undici/package.json
+    - vulnerability: GHSA-p88m-4jfj-68fv
+      package:
+          name: undici
+          version: 6.26.0
+          type: npm
+          location: /usr/local/lib/node_modules/npm/node_modules/undici/package.json
+    - vulnerability: GHSA-g8m3-5g58-fq7m
+      package:
+          name: undici
+          version: 6.26.0
+          type: npm
+          location: /usr/local/lib/node_modules/npm/node_modules/undici/package.json
+    - vulnerability: GHSA-35p6-xmwp-9g52
+      package:
+          name: undici
+          version: 6.26.0
+          type: npm
+          location: /usr/local/lib/node_modules/npm/node_modules/undici/package.json
+    - vulnerability: GHSA-vmf3-w455-68vh
+      package:
+          name: tar
+          version: 7.5.15
+          type: npm
+          location: /usr/local/lib/node_modules/npm/node_modules/tar/package.json

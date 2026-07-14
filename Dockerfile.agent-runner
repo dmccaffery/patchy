@@ -11,8 +11,8 @@
 #     execs `claude -p ...` (internal/harness) and `git` (changeset diffing).
 #
 # So the image must carry: the agent-runner binary, git, /bin/sh, and the
-# claude CLI (which needs node) — that rules out distroless; node:22-slim is
-# the smallest sane base.
+# claude CLI (which needs node) — that rules out distroless; node:24-trixie-slim
+# is the smallest sane base.
 #
 # Built by GoReleaser (`dockers_v2` in .goreleaser.yaml): the agent-runner
 # binary is compiled by GoReleaser and arrives in the build context at
@@ -23,7 +23,7 @@
 # paths are /workspace (emptyDir, and HOME) and /tmp (emptyDir). Nothing in
 # this image may write outside those at runtime: npm's global install happens
 # at build time, and claude keeps its state under $HOME=/workspace.
-FROM node:22-slim
+FROM node:24-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573
 
 # Pinned claude CLI version. Dependabot/renovate should bump this ARG (npm
 # package @anthropic-ai/claude-code); pin it so an agent image is reproducible
@@ -43,7 +43,7 @@ ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/agent-runner /usr/local/bin/agent-runner
 
 # uid 65532 matches internal/jobs' runAsUser (and the distroless "nonroot"
-# convention). node:22-slim's own "node" user is uid 1000, so create ours.
+# convention). the node image's own "node" user is uid 1000, so create ours.
 RUN groupadd --gid 65532 nonroot \
     && useradd --uid 65532 --gid 65532 --no-create-home --shell /sbin/nologin nonroot
 
