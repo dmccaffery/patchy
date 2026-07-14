@@ -35,6 +35,19 @@ updates:
       schedule:
           interval: daily
 
+    # The base-image references in Dockerfile.controller / Dockerfile.agent-runner
+    # are tag + digest pinned; this bumps the digests (and LTS tag rolls).
+    - package-ecosystem: docker
+      directory: /
+      cooldown:
+          default-days: 7
+      commit-message:
+          include: scope
+          prefix: build
+          prefix-development: build
+      schedule:
+          interval: daily
+
     - package-ecosystem: github-actions
       directory: /
       schedule:
