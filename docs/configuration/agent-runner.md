@@ -13,12 +13,12 @@ a Job spec or running the runtime standalone.
 
 <div class="nowrap-first" markdown>
 
-| Env                     | Default              | Purpose                                                     |
-| ----------------------- | -------------------- | ----------------------------------------------------------- |
-| `PATCHY_REPO`           | — (**required**)     | `owner/name` of the repository under remediation            |
-| `PATCHY_ISSUE`          | — (**required**, >0) | The finding's issue number                                  |
-| `PATCHY_PHASE`          | `classify+remediate` | `classify+remediate` or `remediate` (the `/approve` re-run) |
-| `PATCHY_WORKSPACE`      | `/workspace`         | Pod workspace root (the clone, reports, handoff files)      |
+| Env                | Default              | Purpose                                                     |
+| ------------------ | -------------------- | ----------------------------------------------------------- |
+| `PATCHY_REPO`      | — (**required**)     | `owner/name` of the repository under remediation            |
+| `PATCHY_ISSUE`     | — (**required**, >0) | The finding's issue number                                  |
+| `PATCHY_PHASE`     | `classify+remediate` | `classify+remediate` or `remediate` (the `/approve` re-run) |
+| `PATCHY_WORKSPACE` | `/workspace`         | Pod workspace root (the clone, reports, handoff files)      |
 
 </div>
 
