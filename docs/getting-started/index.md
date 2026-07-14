@@ -29,7 +29,7 @@ Deploying the stack takes three steps, each with its own page:
 
     The chart always renders baseline `NetworkPolicy` objects, but plain L3/L4 policies cannot match hostnames. To
     enforce the agent sandbox's egress allowlist (`api.anthropic.com` and the GitHub clone hosts) at the DNS level,
-    enable exactly one of `networkPolicy.cilium.enabled` or `networkPolicy.istio.enabled`. See the
+    enable exactly one of `agent.networkPolicy.cilium.enabled` or `agent.networkPolicy.istio.enabled`. See the
     [isolation model](../deployment/isolation.md) for what each requires.
 
 ## The moving parts you will deploy

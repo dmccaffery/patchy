@@ -1,24 +1,27 @@
 # Copyright 2026 Bitwise Media Group Ltd.
 # SPDX-License-Identifier: MIT
 #
-# Default values mirror deploy/kustomize/base. The controllers install into the
+# Default values mirror deploy/kustomize/base. The layout follows the
+# flux-operator chart convention: everything scoped to one controller — its
+# image, config, scheduling, serviceAccount, service, ingress, httpRoute, and
+# networkPolicy — lives under that controller's top-level key
+# (sourceController, contextController, remediationController); only settings
+# that are genuinely shared stay global. The controllers install into the
 # release namespace; the agent sandbox namespace is created by the chart (see
 # `agent:` below). The three Secrets patchy expects are NOT created here — see
 # the chart README and deploy/kustomize/base/secrets.example.yaml.
 
-# Every image is <registry>/<repository>/<binary>, the names goreleaser
-# publishes. `tag` defaults to v<appVersion>. Per-component overrides live
-# under controllers.<name>.image / agent.image and win key-by-key; a component
-# `digest` pins the image (and beats any tag). Pinning the agent-runner digest
-# here also lands in PATCHY_AGENT_IMAGE — unlike kustomize, there is one knob,
-# not two.
+# Every image is <repository>/<binary>, the names goreleaser publishes. `tag`
+# defaults to v<appVersion>. Per-component overrides live under
+# <controller>.image / agent.image and win key-by-key; a component `digest`
+# pins the image (and beats any tag). Pinning the agent-runner digest here
+# also lands in PATCHY_AGENT_IMAGE — unlike kustomize, there is one knob, not
+# two.
 image:
-    registry: ghcr.io
-    repository: bitwise-media-group/patchy
+    repository: ghcr.io/bitwise-media-group/patchy
     tag: ""
     pullPolicy: IfNotPresent
-
-imagePullSecrets: []
+    pullSecrets: []
 
 nameOverride: ""
 fullnameOverride: ""
@@ -26,13 +29,10 @@ fullnameOverride: ""
 # Extra labels stamped on every object the chart renders.
 commonLabels: {}
 
-# Extra annotations / labels for the controller pods, and standard scheduling
-# knobs (applied to all three controller Deployments).
-podAnnotations: {}
-podLabels: {}
-nodeSelector: {}
-tolerations: []
-affinity: {}
+# Extra annotations stamped on every object the chart renders, including the
+# controller pods. Per-object annotations (<controller>.podAnnotations, the
+# service/serviceAccount/ingress/httpRoute annotations) win key-by-key.
+commonAnnotations: {}
 
 github:
     # Secret (in the release namespace) holding the GitHub App identity.
@@ -52,6 +52,218 @@ anthropic:
     secret: patchy-anthropic
     secretKey: api-key
 
+# Settings applied to all three controllers. Each controller renders its own
+# ConfigMap (consumed with envFrom) holding these plus its `config` block, and
+# may repeat any key here under <controller>.config to override it for that
+# controller alone; every key is the PATCHY_* environment variable minus the
+# prefix — see internal/cli/options.go.
+config:
+    # The listen address is not a value: the chart hardcodes :8080 everywhere
+    # it appears (PATCHY_LISTEN_ADDR, containerPort, probes, NetworkPolicy).
+    # debug, info, warn, or error.
+    logLevel: warn
+    reconcileInterval: 60s
+    # Extra PATCHY_* keys rendered verbatim into every controller's ConfigMap
+    # (full variable name -> value); wins over anything the chart derives.
+    # Per-controller extras live at <controller>.config.extra and win over
+    # these.
+    extra: {}
+
+# ---- source-controller ------------------------------------------------------
+# Receives code_scanning_alert webhooks and accumulates them into issues.
+# Every controller block has the same shape; the knobs are commented once,
+# here.
+sourceController:
+    # Key-by-key override of the global `image` for this binary; a `digest`
+    # pins.
+    image: {}
+    # This controller's own PATCHY_* settings. Any shared `config` key
+    # (logLevel, reconcileInterval) may be repeated here to override it for
+    # this controller alone.
+    config:
+        # DESIGN.md requirement 2: alerts of one advisory type accumulate
+        # into a single issue for an hour.
+        accumulationWindow: 1h
+        # Extra PATCHY_* keys for this controller only (full variable name ->
+        # value); wins over `config.extra` and anything the chart derives.
+        extra: {}
+    resources:
+        requests:
+            cpu: 50m
+            memory: 96Mi
+        limits:
+            cpu: 500m
+            memory: 256Mi
+    podAnnotations: {}
+    podLabels: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    serviceAccount:
+        # Set false to bring your own (and point `name` at it).
+        create: true
+        # Defaults to <fullname>-source-controller.
+        name: ""
+        annotations: {}
+    # Each controller serves POST /webhook plus the probes on one port, so
+    # each needs its own webhook URL on the GitHub App (see the chart README).
+    service:
+        type: ClusterIP
+        port: 8080
+        # Used only when type is NodePort (the kind/dev setup).
+        nodePort: null
+        annotations: {}
+    # Ingress in front of this controller's webhook. GitHub only ever POSTs
+    # /webhook — do not expose more than that path.
+    ingress:
+        enabled: false
+        className: ""
+        annotations: {}
+        hosts: []
+        # - host: patchy-source.example.com
+        #   paths:
+        #       - path: /webhook
+        #         pathType: Prefix
+        tls: []
+        # - secretName: patchy-source-tls
+        #   hosts:
+        #       - patchy-source.example.com
+    # Gateway API alternative to `ingress`: one HTTPRoute for /webhook.
+    # Requires the Gateway API CRDs.
+    httpRoute:
+        enabled: false
+        annotations: {}
+        parentRefs: []
+        # - name: my-gateway
+        #   namespace: gateway-system
+        #   sectionName: https
+        hostnames: []
+        # - patchy-source.example.com
+    # The controller's L3/L4 NetworkPolicy: webhook + probes in, DNS + TLS
+    # out. Ingress allows 8080 from anywhere (kubelet probes arrive from the
+    # node IP, which no pod selector can match); the HMAC signature check in
+    # internal/webhook is the authentication.
+    networkPolicy:
+        create: true
+
+# ---- context-controller -----------------------------------------------------
+# Enhances opened issues with context. Same knobs as sourceController; only
+# `config` differs.
+contextController:
+    image: {}
+    config:
+        # How old an "opened" issue must be before the reconcile pass
+        # enhances it (the webhook path is immediate; this is the catch-up
+        # path).
+        enhanceGrace: 2m
+        extra: {}
+    resources:
+        requests:
+            cpu: 50m
+            memory: 96Mi
+        limits:
+            cpu: 500m
+            memory: 256Mi
+    podAnnotations: {}
+    podLabels: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    serviceAccount:
+        create: true
+        name: ""
+        annotations: {}
+    service:
+        type: ClusterIP
+        port: 8080
+        nodePort: null
+        annotations: {}
+    ingress:
+        enabled: false
+        className: ""
+        annotations: {}
+        hosts: []
+        tls: []
+    httpRoute:
+        enabled: false
+        annotations: {}
+        parentRefs: []
+        hostnames: []
+    networkPolicy:
+        create: true
+
+# ---- remediation-controller -------------------------------------------------
+# Runs the agent Jobs and performs all GitHub side effects. Same knobs as
+# sourceController; `config` carries the agent-stage settings and
+# `tmpSizeLimit` sizes the clone scratch space.
+remediationController:
+    image: {}
+    config:
+        # DESIGN.md requirement 5: only findings older than an hour are
+        # picked up.
+        issueMinAge: 1h
+        maxAttempts: 2
+        # DESIGN.md requirement 6: below this, a human is assigned instead.
+        confidenceThreshold: "0.75"
+        jobDeadline: 1h
+        jobTTL: 1h
+        # The agent stages. CLASSIFY_* limits are absolute; REMEDIATE_* limits
+        # are CEILINGS the runner clamps the classification report's requests
+        # to.
+        modelAllowlist: claude-sonnet-5,claude-opus-4-8
+        classify:
+            harness: claude
+            model: claude-sonnet-5
+            timeout: 15m
+            maxTurns: 25
+            tokenBudget: 150000
+        remediate:
+            harness: claude
+            model: claude-sonnet-5
+            timeout: 45m
+            maxTurns: 80
+            tokenBudget: 400000
+        extra: {}
+    # Higher than its siblings: git clone + bundle fetch of a real repository
+    # happens in this pod.
+    resources:
+        requests:
+            cpu: 100m
+            memory: 256Mi
+        limits:
+            cpu: "1"
+            memory: 1Gi
+    # The scratch emptyDir the repository is cloned into (the root filesystem
+    # is read-only). Size it for the largest repo patchy remediates.
+    tmpSizeLimit: 2Gi
+    podAnnotations: {}
+    podLabels: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    serviceAccount:
+        create: true
+        name: ""
+        annotations: {}
+    service:
+        type: ClusterIP
+        port: 8080
+        nodePort: null
+        annotations: {}
+    ingress:
+        enabled: false
+        className: ""
+        annotations: {}
+        hosts: []
+        tls: []
+    httpRoute:
+        enabled: false
+        annotations: {}
+        parentRefs: []
+        hostnames: []
+    networkPolicy:
+        create: true
+
 # The agent sandbox: the namespace and identity the remediation-controller
 # creates its ephemeral Jobs in. Nothing in this namespace holds a GitHub
 # credential except each Job's short-lived init-container Secret.
@@ -61,136 +273,51 @@ agent:
     # expects it to exist and to carry the restricted Pod Security labels.
     createNamespace: true
     serviceAccount: patchy-agent
-
-# The one settings surface for all three controllers (rendered into a single
-# ConfigMap consumed with envFrom; a key a binary does not bind is ignored by
-# that binary). Values here are the PATCHY_* environment variables minus the
-# prefix — see internal/cli/options.go.
-config:
-    listenAddr: ":8080"
-    reconcileInterval: 60s
-    # DESIGN.md requirement 2: alerts of one advisory type accumulate into a
-    # single issue for an hour.
-    accumulationWindow: 1h
-    # How old an "opened" issue must be before the reconcile pass enhances it
-    # (the webhook path is immediate; this is the catch-up path).
-    enhanceGrace: 2m
-    # DESIGN.md requirement 5: only findings older than an hour are picked up.
-    issueMinAge: 1h
-    maxAttempts: 2
-    # DESIGN.md requirement 6: below this, a human is assigned instead.
-    confidenceThreshold: "0.75"
-    jobDeadline: 1h
-    jobTTL: 1h
-
-    # The agent stages. CLASSIFY_* limits are absolute; REMEDIATE_* limits are
-    # CEILINGS the runner clamps the classification report's requests to.
-    modelAllowlist: claude-sonnet-5,claude-opus-4-8
-    classify:
-        harness: claude
-        model: claude-sonnet-5
-        timeout: 15m
-        maxTurns: 25
-        tokenBudget: 150000
-    remediate:
-        harness: claude
-        model: claude-sonnet-5
-        timeout: 45m
-        maxTurns: 80
-        tokenBudget: 400000
-
-    # Extra PATCHY_* keys rendered verbatim into the ConfigMap (full variable
-    # name -> value); wins over anything the chart derives.
-    extra: {}
-
-controllers:
-    source:
-        image: {}
-        resources:
-            requests:
-                cpu: 50m
-                memory: 96Mi
-            limits:
-                cpu: 500m
-                memory: 256Mi
-    context:
-        image: {}
-        resources:
-            requests:
-                cpu: 50m
-                memory: 96Mi
-            limits:
-                cpu: 500m
-                memory: 256Mi
-    remediation:
-        image: {}
-        # Higher than its siblings: git clone + bundle fetch of a real
-        # repository happens in this pod.
-        resources:
-            requests:
-                cpu: 100m
-                memory: 256Mi
-            limits:
-                cpu: "1"
-                memory: 1Gi
-        # The scratch emptyDir the repository is cloned into (the root
-        # filesystem is read-only). Size it for the largest repo patchy
-        # remediates.
-        tmpSizeLimit: 2Gi
-
-# The agent-runner image the remediation-controller stamps into every Job it
-# creates (PATCHY_AGENT_IMAGE). Same override shape as controllers.<n>.image.
-agentRunner:
+    # The agent-runner image the remediation-controller stamps into every Job
+    # it creates (PATCHY_AGENT_IMAGE). Same override shape as
+    # <controller>.image.
     image: {}
-
-service:
-    type: ClusterIP
-    port: 8080
-    # Per-controller nodePorts, used only when type is NodePort (the kind/dev
-    # setup: one webhook URL per controller).
-    nodePorts:
-        source: null
-        context: null
-        remediation: null
-
-networkPolicy:
-    # The base L3/L4 policies: controller ingress/egress plus default-deny and
-    # a TCP-443-only egress for the agent sandbox. Hostname-level enforcement
-    # needs one of the components below; credential absence is the real
-    # control either way — see deploy/kustomize/base/networkpolicy.yaml.
-    enabled: true
-    # Cluster-internal ranges the agent egress must NOT reach (pod/service/
-    # node CIDRs plus link-local for cloud metadata). Adjust to your cluster.
-    clusterCIDRs:
-        - 10.0.0.0/8
-        - 172.16.0.0/12
-        - 192.168.0.0/16
-        - 169.254.0.0/16
-    # Hosts the agent sandbox may reach, shared by both components below.
-    # Running GHES? Replace the github list with your GHES hostname.
-    agentHosts:
-        anthropic:
-            - api.anthropic.com
-        github:
-            - github.com
-            - codeload.github.com
-            - objects.githubusercontent.com
-        # Cilium only: what names the agent pod may RESOLVE at all.
-        dnsPatterns:
-            - "*.anthropic.com"
-            - "*.github.com"
-            - github.com
-            - "*.githubusercontent.com"
-    # FQDN egress allowlist for Cilium CNIs (requires DNS-based policy).
-    # Mutually exclusive with istio.
-    cilium:
-        enabled: false
-    # The same allowlist as an Istio Sidecar (REGISTRY_ONLY) + ServiceEntries.
-    # Requires native sidecars (Kubernetes >= 1.29, ENABLE_NATIVE_SIDECARS)
-    # and the Istio CNI node agent — see deploy/kustomize/components/istio.
-    istio:
-        enabled: false
-        istiodNamespace: istio-system
-        # A revisioned (canary) install uses istio.io/rev: <revision> instead.
-        injectionLabel: istio-injection
-        injectionValue: enabled
+    # The sandbox policies: default-deny both directions plus a TCP-443-only
+    # egress. A plain NetworkPolicy cannot match hostnames; enforcement at
+    # that level needs `cilium` or `istio` below. Credential absence is the
+    # real control either way — see deploy/kustomize/base/networkpolicy.yaml.
+    networkPolicy:
+        create: true
+        # Cluster-internal ranges the agent egress must NOT reach (pod/
+        # service/node CIDRs plus link-local for cloud metadata). Adjust to
+        # your cluster.
+        clusterCIDRs:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 169.254.0.0/16
+        # Hosts the agent sandbox may reach, shared by both components below.
+        # Running GHES? Replace the github list with your GHES hostname.
+        hosts:
+            anthropic:
+                - api.anthropic.com
+            github:
+                - github.com
+                - codeload.github.com
+                - objects.githubusercontent.com
+            # Cilium only: what names the agent pod may RESOLVE at all.
+            dnsPatterns:
+                - "*.anthropic.com"
+                - "*.github.com"
+                - github.com
+                - "*.githubusercontent.com"
+        # FQDN egress allowlist for Cilium CNIs (requires DNS-based policy).
+        # Mutually exclusive with istio.
+        cilium:
+            enabled: false
+        # The same allowlist as an Istio Sidecar (REGISTRY_ONLY) +
+        # ServiceEntries. Requires native sidecars (istiod with
+        # ENABLE_NATIVE_SIDECARS=true) and the Istio CNI node agent — see
+        # deploy/kustomize/components/istio.
+        istio:
+            enabled: false
+            istiodNamespace: istio-system
+            # A revisioned (canary) install uses istio.io/rev: <revision>
+            # instead.
+            injectionLabel: istio-injection
+            injectionValue: enabled

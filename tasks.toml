@@ -54,9 +54,16 @@ run = """
 set -eu
 helm lint helm/chart
 helm template patchy helm/chart >/dev/null
-helm template patchy helm/chart --set networkPolicy.cilium.enabled=true >/dev/null
-helm template patchy helm/chart --set networkPolicy.istio.enabled=true >/dev/null
-helm template patchy helm/chart --set networkPolicy.enabled=false --set agent.createNamespace=false >/dev/null
+helm template patchy helm/chart --set agent.networkPolicy.cilium.enabled=true >/dev/null
+helm template patchy helm/chart --set agent.networkPolicy.istio.enabled=true >/dev/null
+helm template patchy helm/chart \
+  --set agent.networkPolicy.create=false --set agent.createNamespace=false \
+  --set sourceController.networkPolicy.create=false \
+  --set contextController.networkPolicy.create=false \
+  --set remediationController.networkPolicy.create=false >/dev/null
+helm template patchy helm/chart \
+  --set-json 'sourceController.ingress={"enabled":true,"className":"nginx","hosts":[{"host":"patchy.example.com","paths":[{"path":"/webhook","pathType":"Prefix"}]}]}' \
+  --set-json 'contextController.httpRoute={"enabled":true,"parentRefs":[{"name":"gw","namespace":"gateway-system"}],"hostnames":["patchy.example.com"]}' >/dev/null
 """
 
 # Redefined gates: the archetype's ci/pr plus the zensical docs build, so a

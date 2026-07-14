@@ -20,8 +20,20 @@ SPDX-License-Identifier: MIT
 {{- end -}}
 {{- end }}
 
+{{/*
+Per-controller ConfigMap name. Context: dict "root" $ "name" <component>.
+*/}}
 {{- define "patchy.configMapName" -}}
-{{- printf "%s-config" (include "patchy.fullname" .) -}}
+{{- printf "%s-%s-config" (include "patchy.fullname" .root) .name -}}
+{{- end }}
+
+{{/*
+Per-controller ServiceAccount name: <controller>.serviceAccount.name, or
+<fullname>-<component>. Context: dict "root" $ "name" <component> "vals"
+<controller values>.
+*/}}
+{{- define "patchy.serviceAccountName" -}}
+{{- .vals.serviceAccount.name | default (printf "%s-%s" (include "patchy.fullname" .root) .name) -}}
 {{- end }}
 
 {{/*
@@ -52,19 +64,31 @@ app.kubernetes.io/component: {{ . }}
 {{- end }}
 
 {{/*
+Object annotations: commonAnnotations plus optional per-object extras, which
+win key-by-key. Context: dict "root" $ ["extra" <map>]. Empty output when
+both maps are empty — wrap the annotations: key in `with`.
+*/}}
+{{- define "patchy.annotations" -}}
+{{- $a := merge (dict) (.extra | default dict) (.root.Values.commonAnnotations | default dict) -}}
+{{- if $a -}}
+{{- toYaml $a -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Image reference for one binary. Context: dict "root" $ "binary" <name>
-["image" <per-component override map>]. A digest pins (and beats the tag);
+["image" <per-component override map>]. The repository (registry included)
+defaults to <image.repository>/<binary>; a digest pins (and beats the tag);
 the tag defaults to v<appVersion>, which is how goreleaser tags the images.
 */}}
 {{- define "patchy.image" -}}
 {{- $img := .image | default dict -}}
 {{- $g := .root.Values.image -}}
-{{- $registry := $img.registry | default $g.registry -}}
 {{- $repository := $img.repository | default (printf "%s/%s" $g.repository .binary) -}}
 {{- if $img.digest -}}
-{{- printf "%s/%s@%s" $registry $repository $img.digest -}}
+{{- printf "%s@%s" $repository $img.digest -}}
 {{- else -}}
-{{- printf "%s/%s:%s" $registry $repository ($img.tag | default $g.tag | default (printf "v%s" .root.Chart.AppVersion)) -}}
+{{- printf "%s:%s" $repository ($img.tag | default $g.tag | default (printf "v%s" .root.Chart.AppVersion)) -}}
 {{- end -}}
 {{- end }}
 

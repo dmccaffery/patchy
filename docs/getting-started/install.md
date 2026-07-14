@@ -71,17 +71,20 @@ Common values to override — see the [Helm chart reference](../deployment/helm.
 github:
   baseURL: "" # set for GitHub Enterprise Server
 
-config:
-  # model + budget knobs, all rendered into one ConfigMap as PATCHY_* vars
-  classify:
-    model: claude-sonnet-5
-  remediate:
-    model: claude-sonnet-5
-  modelAllowlist: claude-sonnet-5,claude-opus-4-8
+remediationController:
+  config:
+    # model + budget knobs, rendered into this controller's ConfigMap as
+    # PATCHY_* vars
+    classify:
+      model: claude-sonnet-5
+    remediate:
+      model: claude-sonnet-5
+    modelAllowlist: claude-sonnet-5,claude-opus-4-8
 
-networkPolicy:
-  cilium:
-    enabled: true # FQDN egress for the agent sandbox (or istio.enabled)
+agent:
+  networkPolicy:
+    cilium:
+      enabled: true # FQDN egress for the agent sandbox (or istio.enabled)
 ```
 
 ```sh
@@ -91,7 +94,8 @@ helm upgrade --install patchy oci://ghcr.io/bitwise-media-group/patchy/charts/pa
 
 ## Expose the webhooks
 
-Front the three Services with your Ingress and point the GitHub App's webhook URL at it, fanning out as described in
+Enable `<controller>.ingress` or `<controller>.httpRoute` per controller (scoped to `/webhook`), or front the three
+Services with your own Gateway, and point the GitHub App's webhook URL at it, fanning out as described in
 [Create the GitHub App](github-app.md#the-webhook-url). All three Services are `ClusterIP` on port 8080 with `/healthz`
 and `/readyz` probes.
 

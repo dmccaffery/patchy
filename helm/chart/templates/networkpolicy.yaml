@@ -8,16 +8,21 @@
 #
 #   1. CREDENTIAL ABSENCE (the real control): the agent container gets no
 #      GitHub token (internal/jobs puts it only in the init container's env).
-#   2. Hostname policy (defence in depth): enable networkPolicy.cilium or
-#      networkPolicy.istio, whichever your infrastructure supports.
+#   2. Hostname policy (defence in depth): enable agent.networkPolicy.cilium
+#      or agent.networkPolicy.istio, whichever your infrastructure supports.
 #
 # See deploy/kustomize/base/networkpolicy.yaml for the full discussion.
-{{- if .Values.networkPolicy.enabled }}
-{{- if and .Values.networkPolicy.cilium.enabled .Values.networkPolicy.istio.enabled }}
-{{- fail "networkPolicy.cilium and networkPolicy.istio are mutually exclusive: enable at most one" }}
+{{- if and .Values.agent.networkPolicy.cilium.enabled .Values.agent.networkPolicy.istio.enabled }}
+{{- fail "agent.networkPolicy.cilium and agent.networkPolicy.istio are mutually exclusive: enable at most one" }}
 {{- end }}
+{{- range $c := list
+    (dict "name" "source-controller" "vals" .Values.sourceController "apiServer" false)
+    (dict "name" "context-controller" "vals" .Values.contextController "apiServer" false)
+    (dict "name" "remediation-controller" "vals" .Values.remediationController "apiServer" true)
+}}
+{{- if $c.vals.networkPolicy.create }}
 ---
-# ---- controllers: webhook + probes in, DNS + TLS out -----------------------
+# ---- {{ $c.name }}: webhook + probes in, DNS + TLS out ----------------------
 # Ingress allows 8080 from anywhere (kubelet probes arrive from the node IP,
 # which no pod selector can match; your ingress controller may live in any
 # namespace) and relies on the HMAC signature check in internal/webhook for
@@ -26,16 +31,18 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-    name: {{ include "patchy.fullname" . }}-controllers
-    namespace: {{ .Release.Namespace }}
+    name: {{ include "patchy.fullname" $ }}-{{ $c.name }}
+    namespace: {{ $.Release.Namespace }}
     labels:
-        {{- include "patchy.labels" (dict "root" . "name" "patchy") | nindent 8 }}
+        {{- include "patchy.labels" (dict "root" $ "name" $c.name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" $) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
 spec:
     podSelector:
         matchLabels:
-            app.kubernetes.io/component: controller
-            app.kubernetes.io/part-of: patchy
-            app.kubernetes.io/instance: {{ .Release.Name }}
+            {{- include "patchy.selectorLabels" (dict "root" $ "name" $c.name) | nindent 12 }}
     policyTypes: [Ingress, Egress]
     ingress:
         - ports:
@@ -52,14 +59,19 @@ spec:
                 port: 53
               - protocol: TCP
                 port: 53
-        # GitHub, the Kubernetes API server (remediation-controller), and any
-        # OTLP collector reached over TLS. 6443 covers kind/kubeadm API
-        # servers; managed clusters usually use 443.
+        # GitHub and any OTLP collector reached over TLS. The
+        # remediation-controller alone also talks to the Kubernetes API
+        # server: 6443 covers kind/kubeadm; managed clusters usually use 443.
         - ports:
               - protocol: TCP
                 port: 443
+              {{- if $c.apiServer }}
               - protocol: TCP
                 port: 6443
+              {{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.agent.networkPolicy.create }}
 ---
 # ---- agent namespace: default deny, both directions ------------------------
 # Nothing may reach an agent pod (the controller reads its output from the
@@ -72,14 +84,18 @@ metadata:
     namespace: {{ .Values.agent.namespace }}
     labels:
         {{- include "patchy.labels" (dict "root" . "name" "patchy-agents") | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" .) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
 spec:
     podSelector: {}
     policyTypes: [Ingress, Egress]
 ---
 # TCP 443 (init container: git clone; agent container: claude -> Anthropic)
 # and DNS, nothing else. The except: blocks keep an agent away from the API
-# server, kubelet, and other workloads — adjust networkPolicy.clusterCIDRs to
-# your cluster's pod/service/node ranges.
+# server, kubelet, and other workloads — adjust
+# agent.networkPolicy.clusterCIDRs to your cluster's pod/service/node ranges.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -87,6 +103,10 @@ metadata:
     namespace: {{ .Values.agent.namespace }}
     labels:
         {{- include "patchy.labels" (dict "root" . "name" "patchy-agents") | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" .) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
 spec:
     podSelector:
         matchLabels:
@@ -106,7 +126,7 @@ spec:
               - ipBlock:
                     cidr: 0.0.0.0/0
                     except:
-                        {{- range .Values.networkPolicy.clusterCIDRs }}
+                        {{- range .Values.agent.networkPolicy.clusterCIDRs }}
                         - {{ . }}
                         {{- end }}
           ports:

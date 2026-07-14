@@ -50,15 +50,15 @@ and agent Jobs — runs as non-root uid 65532 with a read-only root filesystem, 
 ## Network egress
 
 The baseline NetworkPolicies (always rendered) hold the agent namespace to cluster-external egress only — the RFC-1918
-and link-local ranges in `networkPolicy.clusterCIDRs` are excluded, so the agent cannot reach cluster services. But
-plain L3/L4 policies cannot name hostnames; pinning egress to exactly the model API and the GitHub clone hosts takes one
-of two optional layers:
+and link-local ranges in `agent.networkPolicy.clusterCIDRs` are excluded, so the agent cannot reach cluster services.
+But plain L3/L4 policies cannot name hostnames; pinning egress to exactly the model API and the GitHub clone hosts takes
+one of two optional layers:
 
-- **Cilium** (`networkPolicy.cilium.enabled: true`) — a `CiliumNetworkPolicy` with DNS-aware FQDN rules for
+- **Cilium** (`agent.networkPolicy.cilium.enabled: true`) — a `CiliumNetworkPolicy` with DNS-aware FQDN rules for
   `api.anthropic.com`, `github.com`, `codeload.github.com`, and `objects.githubusercontent.com`. Requires Cilium with
   the DNS proxy. This is what the prod kustomize overlay uses.
-- **Istio** (`networkPolicy.istio.enabled: true`) — a `Sidecar` in REGISTRY_ONLY mode plus `ServiceEntry` objects for
-  the same hosts. Two hard requirements: **native sidecars** (Kubernetes ≥ 1.29 and istiod with
+- **Istio** (`agent.networkPolicy.istio.enabled: true`) — a `Sidecar` in REGISTRY_ONLY mode plus `ServiceEntry` objects
+  for the same hosts. Two hard requirements: **native sidecars** (Kubernetes ≥ 1.29 and istiod with
   `ENABLE_NATIVE_SIDECARS=true` — a classic sidecar never terminates, hanging the Job, and blackholes the init
   container's clone), and the **Istio CNI node agent** (the `restricted` PSS rejects `istio-init`'s NET_ADMIN/NET_RAW).
 

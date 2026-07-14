@@ -1,32 +1,42 @@
 # Copyright 2026 Bitwise Media Group Ltd.
 # SPDX-License-Identifier: MIT
 #
-# One Service per controller. Each binary serves the same three endpoints on
-# :8080 (internal/webhook): POST /webhook, GET /healthz, GET /readyz — so each
-# controller needs its own webhook URL from GitHub (see deploy/README.md).
+# One Service per controller (<controller>.service). Each binary serves the
+# same three endpoints on its port (internal/webhook): POST /webhook, GET
+# /healthz, GET /readyz — so each controller needs its own webhook URL from
+# GitHub (see deploy/README.md).
 #
-# ClusterIP by default. Exposing them to GitHub is the cluster's business: put
-# an Ingress / Gateway in front in your own environment. service.type
-# NodePort + service.nodePorts covers the kind/dev case.
-{{- range $key := list "source" "context" "remediation" }}
+# ClusterIP by default. Exposing them to GitHub is the cluster's business:
+# enable <controller>.ingress or <controller>.httpRoute, or put your own
+# Gateway in front. type NodePort + nodePort covers the kind/dev case.
+{{- range $c := list
+    (dict "name" "source-controller" "vals" .Values.sourceController)
+    (dict "name" "context-controller" "vals" .Values.contextController)
+    (dict "name" "remediation-controller" "vals" .Values.remediationController)
+}}
+{{- $svc := $c.vals.service }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-    name: {{ include "patchy.fullname" $ }}-{{ $key }}-controller
+    name: {{ include "patchy.fullname" $ }}-{{ $c.name }}
     namespace: {{ $.Release.Namespace }}
     labels:
-        {{- include "patchy.labels" (dict "root" $ "name" (printf "%s-controller" $key)) | nindent 8 }}
+        {{- include "patchy.labels" (dict "root" $ "name" $c.name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" $ "extra" $svc.annotations) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
 spec:
-    type: {{ $.Values.service.type }}
+    type: {{ $svc.type }}
     selector:
-        {{- include "patchy.selectorLabels" (dict "root" $ "name" (printf "%s-controller" $key)) | nindent 8 }}
+        {{- include "patchy.selectorLabels" (dict "root" $ "name" $c.name) | nindent 8 }}
     ports:
         - name: http
-          port: {{ $.Values.service.port }}
+          port: {{ $svc.port }}
           targetPort: http
           protocol: TCP
-          {{- with (get $.Values.service.nodePorts $key) }}
+          {{- with $svc.nodePort }}
           nodePort: {{ . }}
           {{- end }}
 {{- end }}

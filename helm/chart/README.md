@@ -31,28 +31,42 @@ one-liners:
 | `patchy-webhook-secret` | release namespace | `secret`                    | The webhook HMAC secret              |
 | `patchy-anthropic`      | `patchy-agents`   | `api-key`                   | The model API key for the agent Jobs |
 
-Each controller then needs its own webhook URL configured on the GitHub App (`POST /webhook` on its Service, port 8080),
-all signed with the same secret. Exposing them to GitHub is your cluster's business — put an Ingress or Gateway in
-front; the chart deliberately ships none.
+Each controller then needs its own webhook URL configured on the GitHub App (`POST /webhook` on its Service), all signed
+with the same secret. Expose each one with `<controller>.ingress` or `<controller>.httpRoute` (scoped to `/webhook`), or
+bring your own Gateway.
 
 ## Values worth knowing
 
-Defaults mirror the kustomize base; see [`values.yaml`](values.yaml) for the full annotated list.
+Defaults mirror the kustomize base; see [`values.yaml`](values.yaml) for the full annotated list, validated by
+[`values.schema.json`](values.schema.json). The layout follows the flux-operator convention: everything scoped to one
+controller lives under its top-level key — `sourceController`, `contextController`, `remediationController` — and each
+block has the same shape:
 
-- `image.*` — registry/repository prefix, tag (default `v<appVersion>`), pull policy. Per-component overrides live at
-  `controllers.<name>.image` and `agentRunner.image`; setting a `digest` pins that image. Pinning the agent-runner
-  digest also updates `PATCHY_AGENT_IMAGE`, the string the remediation-controller stamps into every Job — one knob,
-  unlike kustomize's two.
-- `config.*` — the `PATCHY_*` settings surface (accumulation window, pickup age, confidence threshold, both agent
-  stages' models/budgets). `config.extra` renders arbitrary `PATCHY_*` keys and wins over anything the chart derives.
-- `agent.*` — the sandbox namespace (created by the chart with the `restricted` Pod Security labels; `helm uninstall`
-  deletes it, killing any running agent Job) and the agent service account.
-- `networkPolicy.*` — the base L3/L4 policies are always on (`enabled: true`). For hostname-level egress on the agent
-  sandbox enable exactly one of `networkPolicy.cilium.enabled` (FQDN policy, needs Cilium's DNS proxy) or
-  `networkPolicy.istio.enabled` (REGISTRY_ONLY sidecar, needs native sidecars + the Istio CNI node agent). Adjust
-  `networkPolicy.clusterCIDRs` to your cluster and `networkPolicy.agentHosts` for GHES. Either way, credential absence —
-  the agent container never holds a GitHub token — is the real control.
-- `service.type` / `service.nodePorts` — `ClusterIP` by default; NodePort covers the kind/dev flow.
+- `<controller>.image` — key-by-key override of the global `image.*` prefix/tag; a `digest` pins that image.
+- `<controller>.config` — the `PATCHY_*` keys that binary binds (source: accumulation window; context: enhance grace;
+  remediation: pickup age, confidence threshold, both agent stages' models/budgets), rendered into a per-controller
+  ConfigMap. `config.*` holds the shared keys (log level, reconcile interval), each overridable per controller by
+  repeating it under `<controller>.config`; `config.extra` and `<controller>.config.extra` render arbitrary `PATCHY_*`
+  keys and win over anything the chart derives.
+- `<controller>.serviceAccount` / `service` / `ingress` / `httpRoute` / `networkPolicy` — that controller's identity,
+  Service (NodePort covers the kind/dev flow), optional webhook exposure, and L3/L4 policy.
+- `<controller>.resources`, `podAnnotations`, `podLabels`, `nodeSelector`, `tolerations`, `affinity` — per-controller
+  pod tuning.
+
+The genuinely shared settings stay global:
+
+- `image.*` — repository prefix (registry included), tag (default `v<appVersion>`), pull policy, pull secrets.
+- `commonLabels` / `commonAnnotations` — stamped on every object the chart renders (annotations reach the pods too;
+  per-object annotations win key-by-key).
+- `agent.*` — the sandbox: namespace (created by the chart with the `restricted` Pod Security labels; `helm uninstall`
+  deletes it, killing any running agent Job), the agent service account, and `agent.image`, the agent-runner image the
+  remediation-controller stamps into every Job (`PATCHY_AGENT_IMAGE`) — pinning its digest is one knob, unlike
+  kustomize's two.
+- `agent.networkPolicy.*` — the sandbox policies (default-deny + TCP-443-only egress). For hostname-level egress enable
+  exactly one of `agent.networkPolicy.cilium.enabled` (FQDN policy, needs Cilium's DNS proxy) or
+  `agent.networkPolicy.istio.enabled` (REGISTRY_ONLY sidecar, needs native sidecars + the Istio CNI node agent). Adjust
+  `clusterCIDRs` to your cluster and `hosts` for GHES. Either way, credential absence — the agent container never holds
+  a GitHub token — is the real control.
 
 Do not scale the controllers: all three are singletons by construction (the state machine is GitHub issue labels and
 there is no leader election), so the Deployments hardcode `replicas: 1` with `strategy: Recreate`.

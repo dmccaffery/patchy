@@ -1,65 +1,93 @@
 # Copyright 2026 Bitwise Media Group Ltd.
 # SPDX-License-Identifier: MIT
 #
-# The one settings surface for all three controllers, consumed with envFrom.
-# Every key is a PATCHY_* environment variable (internal/cli/options.go maps
-# them back onto flags); a key a given binary does not bind is simply ignored
-# by that binary, which is why one ConfigMap can serve all three.
+# One ConfigMap per controller, consumed with envFrom. Every key is a PATCHY_*
+# environment variable (internal/cli/options.go maps them back onto flags):
+# the shared keys come from .Values.config — each overridable per controller
+# by repeating the key under <controller>.config — and the
+# controller-specific keys from <controller>.config, so each ConfigMap
+# carries exactly the settings its binary binds.
 #
-# The data is assembled as a dict so .Values.config.extra can override any
-# derived key without rendering it twice.
-{{- $cfg := .Values.config }}
+# The data is assembled as a dict so the extra maps (config.extra, then
+# <controller>.config.extra) can override any derived key without rendering
+# it twice.
+{{- range $c := list
+    (dict "name" "source-controller" "vals" .Values.sourceController)
+    (dict "name" "context-controller" "vals" .Values.contextController)
+    (dict "name" "remediation-controller" "vals" .Values.remediationController)
+}}
+{{- $g := $.Values.config }}
+{{- $own := $c.vals.config }}
+{{/*
+The listen address is fixed: the containerPort, probes, and NetworkPolicy
+ports all say 8080, so a knob here would just let the pieces disagree.
+*/}}
 {{- $data := dict
-    "PATCHY_LISTEN_ADDR" $cfg.listenAddr
-    "PATCHY_RECONCILE_INTERVAL" $cfg.reconcileInterval
+    "PATCHY_LISTEN_ADDR" ":8080"
+    "PATCHY_RECONCILE_INTERVAL" ($own.reconcileInterval | default $g.reconcileInterval)
+    "PATCHY_LOG_LEVEL" ($own.logLevel | default $g.logLevel)
     "PATCHY_WEBHOOK_SECRET_FILE" "/etc/patchy/webhook/secret"
     "PATCHY_GITHUB_APP_PRIVATE_KEY_FILE" "/etc/patchy/github-app/private-key.pem"
-    "PATCHY_ACCUMULATION_WINDOW" $cfg.accumulationWindow
-    "PATCHY_ENHANCE_GRACE" $cfg.enhanceGrace
-    "PATCHY_ISSUE_MIN_AGE" $cfg.issueMinAge
-    "PATCHY_MAX_ATTEMPTS" $cfg.maxAttempts
-    "PATCHY_CONFIDENCE_THRESHOLD" $cfg.confidenceThreshold
-    "PATCHY_AGENT_NAMESPACE" .Values.agent.namespace
-    "PATCHY_AGENT_SERVICE_ACCOUNT" .Values.agent.serviceAccount
-    "PATCHY_ANTHROPIC_SECRET" .Values.anthropic.secret
-    "PATCHY_ANTHROPIC_SECRET_KEY" .Values.anthropic.secretKey
-    "PATCHY_JOB_DEADLINE" $cfg.jobDeadline
-    "PATCHY_JOB_TTL" $cfg.jobTTL
-    "PATCHY_MODEL_ALLOWLIST" $cfg.modelAllowlist
-    "PATCHY_CLASSIFY_HARNESS" $cfg.classify.harness
-    "PATCHY_CLASSIFY_MODEL" $cfg.classify.model
-    "PATCHY_CLASSIFY_TIMEOUT" $cfg.classify.timeout
-    "PATCHY_CLASSIFY_MAX_TURNS" $cfg.classify.maxTurns
-    "PATCHY_CLASSIFY_TOKEN_BUDGET" $cfg.classify.tokenBudget
-    "PATCHY_REMEDIATE_HARNESS" $cfg.remediate.harness
-    "PATCHY_REMEDIATE_MODEL" $cfg.remediate.model
-    "PATCHY_REMEDIATE_TIMEOUT" $cfg.remediate.timeout
-    "PATCHY_REMEDIATE_MAX_TURNS" $cfg.remediate.maxTurns
-    "PATCHY_REMEDIATE_TOKEN_BUDGET" $cfg.remediate.tokenBudget
 }}
 {{/*
 PATCHY_GITHUB_APP_ID is NOT here: it comes from the GitHub App Secret (app-id
 key, env secretKeyRef in each Deployment) so App identity lives in one object.
-
+*/}}
+{{- with $.Values.github.baseURL }}
+{{- $_ := set $data "PATCHY_GITHUB_BASE_URL" . }}
+{{- end }}
+{{- if eq $c.name "source-controller" }}
+{{- $_ := set $data "PATCHY_ACCUMULATION_WINDOW" $own.accumulationWindow }}
+{{- else if eq $c.name "context-controller" }}
+{{- $_ := set $data "PATCHY_ENHANCE_GRACE" $own.enhanceGrace }}
+{{- else }}
+{{/*
 PATCHY_AGENT_IMAGE is the string the remediation-controller stamps into every
 Job it creates — derived from the same values as the container images, so
 pinning the agent-runner digest is one edit, not kustomize's two.
 */}}
-{{- $_ := set $data "PATCHY_AGENT_IMAGE" (include "patchy.image" (dict "root" . "binary" "agent-runner" "image" .Values.agentRunner.image)) }}
-{{- with .Values.github.baseURL }}
-{{- $_ := set $data "PATCHY_GITHUB_BASE_URL" . }}
+{{- $_ := set $data "PATCHY_ISSUE_MIN_AGE" $own.issueMinAge }}
+{{- $_ := set $data "PATCHY_MAX_ATTEMPTS" $own.maxAttempts }}
+{{- $_ := set $data "PATCHY_CONFIDENCE_THRESHOLD" $own.confidenceThreshold }}
+{{- $_ := set $data "PATCHY_JOB_DEADLINE" $own.jobDeadline }}
+{{- $_ := set $data "PATCHY_JOB_TTL" $own.jobTTL }}
+{{- $_ := set $data "PATCHY_MODEL_ALLOWLIST" $own.modelAllowlist }}
+{{- $_ := set $data "PATCHY_CLASSIFY_HARNESS" $own.classify.harness }}
+{{- $_ := set $data "PATCHY_CLASSIFY_MODEL" $own.classify.model }}
+{{- $_ := set $data "PATCHY_CLASSIFY_TIMEOUT" $own.classify.timeout }}
+{{- $_ := set $data "PATCHY_CLASSIFY_MAX_TURNS" $own.classify.maxTurns }}
+{{- $_ := set $data "PATCHY_CLASSIFY_TOKEN_BUDGET" $own.classify.tokenBudget }}
+{{- $_ := set $data "PATCHY_REMEDIATE_HARNESS" $own.remediate.harness }}
+{{- $_ := set $data "PATCHY_REMEDIATE_MODEL" $own.remediate.model }}
+{{- $_ := set $data "PATCHY_REMEDIATE_TIMEOUT" $own.remediate.timeout }}
+{{- $_ := set $data "PATCHY_REMEDIATE_MAX_TURNS" $own.remediate.maxTurns }}
+{{- $_ := set $data "PATCHY_REMEDIATE_TOKEN_BUDGET" $own.remediate.tokenBudget }}
+{{- $_ := set $data "PATCHY_AGENT_NAMESPACE" $.Values.agent.namespace }}
+{{- $_ := set $data "PATCHY_AGENT_SERVICE_ACCOUNT" $.Values.agent.serviceAccount }}
+{{- $_ := set $data "PATCHY_ANTHROPIC_SECRET" $.Values.anthropic.secret }}
+{{- $_ := set $data "PATCHY_ANTHROPIC_SECRET_KEY" $.Values.anthropic.secretKey }}
+{{- $_ := set $data "PATCHY_AGENT_IMAGE" (include "patchy.image" (dict "root" $ "binary" "agent-runner" "image" $.Values.agent.image)) }}
 {{- end }}
-{{- range $k, $v := $cfg.extra }}
+{{- range $k, $v := $g.extra }}
 {{- $_ := set $data $k $v }}
 {{- end }}
+{{- range $k, $v := $own.extra }}
+{{- $_ := set $data $k $v }}
+{{- end }}
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-    name: {{ include "patchy.configMapName" . }}
-    namespace: {{ .Release.Namespace }}
+    name: {{ include "patchy.configMapName" (dict "root" $ "name" $c.name) }}
+    namespace: {{ $.Release.Namespace }}
     labels:
-        {{- include "patchy.labels" (dict "root" . "name" "patchy") | nindent 8 }}
+        {{- include "patchy.labels" (dict "root" $ "name" $c.name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" $) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
 data:
     {{- range $k, $v := $data }}
     {{ $k }}: {{ $v | toString | quote }}
     {{- end }}
+{{- end }}

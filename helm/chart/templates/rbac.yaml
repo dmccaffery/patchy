@@ -17,6 +17,10 @@ metadata:
     namespace: {{ .Values.agent.namespace }}
     labels:
         {{- include "patchy.labels" (dict "root" . "name" "remediation-controller") | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" .) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
 rules:
     - apiGroups: ["batch"]
       resources: ["jobs"]
@@ -38,11 +42,15 @@ metadata:
     namespace: {{ .Values.agent.namespace }}
     labels:
         {{- include "patchy.labels" (dict "root" . "name" "remediation-controller") | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" .) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
 roleRef:
     apiGroup: rbac.authorization.k8s.io
     kind: Role
     name: {{ include "patchy.fullname" . }}-remediation-controller
 subjects:
     - kind: ServiceAccount
-      name: {{ include "patchy.fullname" . }}-remediation-controller
+      name: {{ include "patchy.serviceAccountName" (dict "root" . "name" "remediation-controller" "vals" .Values.remediationController) }}
       namespace: {{ .Release.Namespace }}

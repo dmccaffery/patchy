@@ -1,0 +1,51 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# Optional Ingress per controller (<controller>.ingress), fronting that
+# controller's webhook Service. GitHub only ever POSTs /webhook and the HMAC
+# signature check in internal/webhook is the authentication — scope the paths
+# to /webhook rather than exposing the probes too.
+{{- range $c := list
+    (dict "name" "source-controller" "vals" .Values.sourceController)
+    (dict "name" "context-controller" "vals" .Values.contextController)
+    (dict "name" "remediation-controller" "vals" .Values.remediationController)
+}}
+{{- $ing := $c.vals.ingress }}
+{{- if $ing.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+    name: {{ include "patchy.fullname" $ }}-{{ $c.name }}
+    namespace: {{ $.Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" $ "name" $c.name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" $ "extra" $ing.annotations) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+spec:
+    {{- with $ing.className }}
+    ingressClassName: {{ . }}
+    {{- end }}
+    {{- with $ing.tls }}
+    tls:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    rules:
+        {{- range $ing.hosts }}
+        - host: {{ .host | quote }}
+          http:
+              paths:
+                  {{- range .paths }}
+                  - path: {{ .path }}
+                    pathType: {{ .pathType }}
+                    backend:
+                        service:
+                            name: {{ include "patchy.fullname" $ }}-{{ $c.name }}
+                            port:
+                                name: http
+                  {{- end }}
+        {{- end }}
+{{- end }}
+{{- end }}
