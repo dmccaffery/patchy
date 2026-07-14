@@ -9,6 +9,7 @@ type: application
 # Only Kubernetes lines that have not reached end-of-life are supported.
 kubeVersion: ">=1.34.0-0"
 home: https://oss.bitwisemedia.uk/patchy
+icon: https://oss.bitwisemedia.uk/patchy/assets/images/favicon.svg
 sources:
     - https://github.com/bitwise-media-group/patchy
 maintainers:

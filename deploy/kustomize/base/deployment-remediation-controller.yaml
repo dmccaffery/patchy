@@ -7,6 +7,7 @@ metadata:
     name: patchy-remediation-controller
     namespace: patchy
     labels:
+        app: remediation-controller
         app.kubernetes.io/name: remediation-controller
         app.kubernetes.io/part-of: patchy
         app.kubernetes.io/component: controller
@@ -27,6 +28,7 @@ spec:
     template:
         metadata:
             labels:
+                app: remediation-controller
                 app.kubernetes.io/name: remediation-controller
                 app.kubernetes.io/part-of: patchy
                 app.kubernetes.io/component: controller

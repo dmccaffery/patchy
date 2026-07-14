@@ -89,7 +89,9 @@ patches:
           - op: add
             path: /spec/ports/0/nodePort
             value: 30082
-    # Laptop-sized. Limits off, requests tiny — a kind node has no headroom.
+    # Laptop-sized. Requests tiny — a kind node has no headroom. Limits stay
+    # (kubescape C-0270/C-0271 gate on them) but loose enough to never
+    # throttle a dev loop.
     - target:
           kind: Deployment
           labelSelector: app.kubernetes.io/part-of=patchy
@@ -100,3 +102,6 @@ patches:
                 requests:
                     cpu: 10m
                     memory: 64Mi
+                limits:
+                    cpu: "1"
+                    memory: 256Mi

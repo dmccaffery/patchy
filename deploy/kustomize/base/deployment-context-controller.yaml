@@ -7,6 +7,7 @@ metadata:
     name: patchy-context-controller
     namespace: patchy
     labels:
+        app: context-controller
         app.kubernetes.io/name: context-controller
         app.kubernetes.io/part-of: patchy
         app.kubernetes.io/component: controller
@@ -23,6 +24,7 @@ spec:
     template:
         metadata:
             labels:
+                app: context-controller
                 app.kubernetes.io/name: context-controller
                 app.kubernetes.io/part-of: patchy
                 app.kubernetes.io/component: controller
