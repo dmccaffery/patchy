@@ -97,4 +97,5 @@ Any other conformant implementation (ingress-nginx, Istio, Envoy Gateway, Cilium
 The base ships the webhook-controller Deployment and its ClusterIP Service (`patchy-webhook-controller`) but
 deliberately no Ingress — put your environment's Ingress or Gateway in front of that Service in your own overlay. The
 dev overlay exposes it as NodePort 30079 for kind, which is where a webhook tunnel (smee.io, ngrok,
-`gh webhook forward`) should point.
+`gh webhook forward`) should point. On [Colima](colima.md) you can skip the NodePort and run a real local Ingress
+instead.

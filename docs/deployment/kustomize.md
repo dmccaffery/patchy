@@ -27,7 +27,8 @@ kubectl apply -k deploy/kustomize/overlays/prod
 - **dev** targets a local kind cluster: NodePort services (30079 webhook-controller — the routing entry point your
   tunnel targets — plus 30080/30081/30082 for the controllers directly), placeholder Secrets, fast loops (2-minute
   accumulation and min-age, 10s reconcile), and the `fake` harness so no tokens are spent. Tunnel GitHub deliveries in
-  with `gh webhook forward` or smee.io. Remember that kind's default CNI ignores NetworkPolicy.
+  with `gh webhook forward` or smee.io. Remember that kind's default CNI ignores NetworkPolicy. The same overlay runs
+  unchanged on [Colima](colima.md), which drops the image-loading and port-mapping steps and supports a real Ingress.
 - **prod** pins every image by digest (the checked-in `sha256:0000…` values are placeholders — replace them with the
   published digests, including the `PATCHY_AGENT_IMAGE` reference inside the ConfigMap patch) and layers the Cilium
   component for FQDN egress.
