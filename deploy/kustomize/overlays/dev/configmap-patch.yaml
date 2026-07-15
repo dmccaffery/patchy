@@ -10,6 +10,10 @@ metadata:
     name: patchy-config
     namespace: patchy
 data:
+    # Chatty logs: the binaries default to warn, which makes a healthy dev
+    # cluster look silent. Every controller reads this via envFrom.
+    PATCHY_LOG_LEVEL: info
+
     # Tight loops: a demo should not wait an hour to see anything happen.
     PATCHY_RECONCILE_INTERVAL: 10s
     PATCHY_ACCUMULATION_WINDOW: 2m

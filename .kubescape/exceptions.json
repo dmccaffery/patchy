@@ -92,5 +92,17 @@
             }
         ],
         "posturePolicies": [{ "controlID": "C-0237" }]
+    },
+    {
+        "name": "dev-webhook-ingress-c0263-tls-terminates-at-the-tunnel",
+        "policyType": "postureExceptionPolicy",
+        "actions": ["alertOnly"],
+        "resources": [
+            {
+                "designatorType": "Attributes",
+                "attributes": { "kind": "Ingress", "name": "patchy-webhook", "namespace": "patchy" }
+            }
+        ],
+        "posturePolicies": [{ "controlID": "C-0263" }]
     }
 ]

@@ -7,8 +7,9 @@ The [dev overlay](kustomize.md) assumes a local [kind](https://kind.sigs.k8s.io/
 - **No image loading.** With Colima's default Docker runtime, k3s shares Docker's image store — anything you
   `docker build` or `docker tag` is immediately runnable in the cluster. The `kind load docker-image` step disappears.
 - **No port-mapping config.** Colima forwards every listening TCP port in the VM to `127.0.0.1` on the host
-  automatically, so the dev overlay's NodePorts (30079–30082) — and an ingress controller's 80/443 — appear on
-  `localhost` without kind's `extraPortMappings`.
+  automatically, so the dev overlay's NodePorts (30079–30082) appear on `localhost` without kind's `extraPortMappings`.
+  (One deliberate exception: with a reachable VM address and Traefik enabled, colima does not forward 80/443 — see
+  [Ingress](#ingress-for-the-webhook-controller).)
 - **NetworkPolicy is enforced.** k3s embeds a network policy controller, so the base default-deny in `patchy-agents`
   actually applies — unlike kindnet, which accepts the policies and ignores them.
 
@@ -22,9 +23,10 @@ webhook-controller**, the same shape production uses, instead of a bare NodePort
     redeploy; it restarts the deployments so the fresh build actually rolls out. Override the VM size on first start
     with `COLIMA_CPU` / `COLIMA_MEMORY` (defaults 4 / 8), and pass a PAT with `GITHUB_TOKEN` so the controllers can
     actually reach GitHub — see [GitHub credentials](#github-credentials). It starts colima with the bundled Traefik
-    enabled, so when it finishes the webhook is reachable through the
-    [Ingress](#ingress-for-the-webhook-controller) at `http://localhost/webhook` as well as the NodePort at
-    `http://localhost:30079`. The manual steps below remain the explanation of what it does.
+    enabled and finishes by probing the webhook [Ingress](#ingress-for-the-webhook-controller) and printing its URL —
+    `http://localhost/webhook`, or `http://<vm-ip>/webhook` when colima runs with a reachable network address —
+    alongside the NodePort at `http://localhost:30079`. The manual steps below remain the explanation of what it
+    does.
 
 ## Start the cluster
 
@@ -118,9 +120,17 @@ done — the **dev overlay ships a host-less, class-less Ingress** (`overlays/de
 Class-less on purpose: a dev cluster has one ingress controller, and the cluster's default IngressClass is assigned on
 admission — k3s marks its bundled Traefik as the default, and on stock kind the object is simply inert.
 
-The plumbing that makes it reach `localhost`: k3s's Traefik is a `LoadBalancer` Service, servicelb gives it the node's
-address, and Colima forwards the listening 80/443 to `localhost` (macOS allows unprivileged binds below 1024, so no sudo
-is involved).
+Where it answers depends on colima's network mode. servicelb gives Traefik's `LoadBalancer` Service the node's address,
+and then:
+
+- **No reachable VM address** (colima's default, and how `dev-colima` starts a fresh instance): lima forwards the
+  listening 80/443 to `localhost` (macOS allows unprivileged binds below 1024, so no sudo is involved) —
+  `http://localhost/webhook`.
+- **`network.address: true` / `--network-address`**: colima deliberately does **not** forward 80/443 — the guard keeps a
+  VM that has its own IP from occupying the host's web ports — and Traefik answers at the VM's address instead:
+  `http://<vm-ip>/webhook` (`colima ls` prints the address; `patchy.<vm-ip>.sslip.io` gives it a name).
+
+`dev-colima` detects the mode, probes the route, and prints the working URL when it finishes.
 
 Prefer ingress-nginx? Install it as the default class and the same Ingress is satisfied without Traefik:
 
@@ -147,7 +157,8 @@ Smoke-test the route. The webhook server registers `POST /webhook` only, so a GE
 reached the controller (a 404 means the Ingress didn't match):
 
 ```sh
-curl -i http://localhost/webhook                      # dev-overlay Ingress
+curl -i http://localhost/webhook                      # dev-overlay Ingress (VM IP instead of
+                                                      # localhost with a network address)
 curl -i http://patchy.127.0.0.1.sslip.io/webhook      # chart Ingress
 ```
 
