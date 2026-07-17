@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/bitwise-media-group/patchy/compare/v0.3.1...v0.3.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* **deploy:** grant the remediation-controller update on per-Job Secrets ([8d44e02](https://github.com/bitwise-media-group/patchy/commit/8d44e0265b3ab059e3f2b3d9df4c762cf0859f97))
+* **release:** sign images and chart with cosign's legacy signature format ([57addef](https://github.com/bitwise-media-group/patchy/commit/57addefea5552553f44c31c0b5292969bb2a5d57))
+
 ## [0.3.1](https://github.com/bitwise-media-group/patchy/compare/v0.3.0...v0.3.1) (2026-07-17)
 
 
