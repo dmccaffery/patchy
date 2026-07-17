@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.1](https://github.com/bitwise-media-group/patchy/compare/v0.3.0...v0.3.1) (2026-07-17)
+
+
+### Features
+
+* **build:** add dev-colima task for one-command local deploys ([7602d35](https://github.com/bitwise-media-group/patchy/commit/7602d3574d25c68f1ea58a259692096f99c92682))
+* **deploy:** front the dev webhook with traefik ingress ([816ab22](https://github.com/bitwise-media-group/patchy/commit/816ab22441e5f3a050b31fe43b7e4f397b66baa9)), closes [#16](https://github.com/bitwise-media-group/patchy/issues/16)
+
+
+### Bug Fixes
+
+* **deploy:** clear the kubescape gates for helm and kustomize ([f724c22](https://github.com/bitwise-media-group/patchy/commit/f724c2251486bf007740d7ad959ae938826e49ba))
+
 ## [0.3.0](https://github.com/bitwise-media-group/patchy/compare/v0.2.0...v0.3.0) (2026-07-14)
 
 
