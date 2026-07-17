@@ -94,7 +94,10 @@ jobs:
               run: |
                   set -euo pipefail
                   docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin <<<"${GITHUB_TOKEN}"
-                  cosign sign --yes "ghcr.io/${GITHUB_REPOSITORY}/charts/patchy@${{ steps.push.outputs.digest }}"
+                  # legacy signature format (.sig tag + Rekor), matching the
+                  # container images: the platform verifies one format everywhere
+                  cosign sign --yes --use-signing-config=false \
+                    "ghcr.io/${GITHUB_REPOSITORY}/charts/patchy@${{ steps.push.outputs.digest }}"
 
             - name: Attest build provenance
               uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1

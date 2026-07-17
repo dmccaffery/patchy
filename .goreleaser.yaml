@@ -230,8 +230,12 @@ docker_digest:
 # Keyless cosign signatures over the pushed container images. The empty
 # `artifacts` default selects exactly the dockers_v2 image artifacts above, and
 # signing targets the immutable digest, not the tag. Signatures are pushed to
-# ghcr as OCI artifacts next to each image. Runs only on publish; `make
-# snapshot` additionally skips it via --skip=sign. Verify with:
+# ghcr as OCI artifacts next to each image. --use-signing-config=false pins
+# cosign v3 to the legacy signature format (.sig tag + Rekor upload) instead of
+# a bundle attached via the OCI referrers API: kyverno's Cosign verification
+# (flux-manifests verify-platform-signature) only reads the legacy format.
+# Runs only on publish; `make snapshot` additionally skips it via --skip=sign.
+# Verify with:
 #   cosign verify ghcr.io/bitwise-media-group/patchy/<name>:vX.Y.Z \
 #     --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
 #     --certificate-identity-regexp='^https://github.com/bitwise-media-group/github-workflows/'
@@ -241,6 +245,7 @@ docker_signs:
           - sign
           - ${artifact}@${digest}
           - --yes
+          - --use-signing-config=false
       output: true
 
 # ^ref: https://goreleaser.com/customization/sign/sign/
