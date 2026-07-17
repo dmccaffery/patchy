@@ -10,6 +10,10 @@
 # CLI, so there is no cask; container images are published by goreleaser
 # (dockers_v2 over the repo-root Dockerfile.*) to ghcr, and their digests
 # (dist/digests.txt) get the same build-provenance attestation as the archives.
+# When a release was actually cut, the helm job then packages, cosign-signs,
+# and pushes the chart to ghcr (helm.yaml, called at the release tag) — it runs
+# here rather than on `release: published` because goreleaser publishes the
+# release with GITHUB_TOKEN, and GITHUB_TOKEN-driven events start no workflows.
 #
 # app-client-id/app-private-key author the release-please PR as the "FF Merge" App
 # instead of the GITHUB_TOKEN. A GITHUB_TOKEN-authored push fires no workflow_run,
@@ -60,3 +64,26 @@ jobs:
         secrets:
             # private key for the App that authors the release PR (same App as /merge)
             app-private-key: ${{ secrets.FF_MERGE_PRIVATE_KEY }}
+
+    # Package, sign, and push the helm chart to ghcr — only when this run cut a
+    # release (release_created is an empty string otherwise). Runs after the
+    # whole reusable workflow, so the container images the chart references are
+    # already on ghcr; the checkout inside helm.yaml is at the release tag, whose
+    # Chart.yaml release-please has already stamped.
+    helm:
+        needs: release
+        if: needs.release.outputs.release_created
+        uses: ./.github/workflows/helm.yaml
+        # ceiling for helm.yaml's publish job
+        permissions:
+            contents: read
+            # helm push to ghcr (also pushes the cosign signature artifact)
+            packages: write
+            # keyless signing: the cosign chart signature and the provenance attestation
+            id-token: write
+            # github build-provenance attestation
+            attestations: write
+            # artifact storage record for the attestation
+            artifact-metadata: write
+        with:
+            ref: ${{ needs.release.outputs.tag_name }}

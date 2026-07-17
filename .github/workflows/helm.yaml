@@ -1,13 +1,18 @@
 # Copyright 2026 Bitwise Media Group Ltd.
 # SPDX-License-Identifier: MIT
 
-# Helm chart publishing. Runs when goreleaser undrafts the vX.Y.Z release (the
-# `release: published` event), after the container images that version of the
-# chart references are on ghcr. No --version/--app-version overrides are
-# needed: release-please stamps Chart.yaml in the release PR (extra-files in
+# Helm chart publishing, called from the release pipeline (release.yaml) once
+# the reusable release workflow has cut vX.Y.Z and goreleaser has pushed the
+# container images that version of the chart references to ghcr. A
+# `release: published` trigger would never fire here: goreleaser publishes the
+# release with the workflow's GITHUB_TOKEN, and GITHUB_TOKEN-driven events
+# start no workflows (GitHub's recursion guard) — so release.yaml calls this
+# workflow directly, gated on the release_created output, passing the release
+# tag as `ref`. No --version/--app-version overrides are needed: release-please
+# stamps Chart.yaml in the release PR (extra-files in
 # release-please-config.json), so the tagged commit already carries the right
-# version — the checkout below is at that tag for a release event, and at the
-# chosen ref for a manual dispatch.
+# version — the checkout below is at that tag when called from the release
+# pipeline, and at the chosen ref for a manual dispatch.
 #
 # The pushed chart gets a keyless cosign signature and the same GitHub
 # build-provenance attestation as the binaries and images. Verify with:
@@ -22,9 +27,17 @@
 name: Helm Chart
 
 on:
-    release:
-        types: [published]
-    # republish by hand (e.g. a publish failure after the release went out)
+    workflow_call:
+        inputs:
+            ref:
+                description: >-
+                    Git ref to publish the chart from (the release tag). Empty checks out the ref the run was
+                    triggered on.
+                required: false
+                default: ""
+                type: string
+    # republish by hand (e.g. a publish failure after the release went out);
+    # pick the vX.Y.Z tag as the ref in the dispatch UI
     workflow_dispatch:
 
 permissions: {}
@@ -45,6 +58,9 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+              with:
+                  # empty ref falls through to checkout's default (the triggering ref)
+                  ref: ${{ inputs.ref }}
 
             - name: Lint
               run: |
