@@ -11,6 +11,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
@@ -51,7 +52,7 @@ func (p podLogs) Stream(ctx context.Context, pod, container string, follow bool)
 // ends. If the log stream cannot be opened or breaks, the caller falls back
 // to Result.
 func (c *Client) Follow(ctx context.Context, jobName string, fn func(envelope.Event) error) error {
-	pod, err := c.waitForPod(ctx, jobName)
+	pod, err := c.waitForAgent(ctx, jobName, false)
 	if err != nil {
 		return err
 	}
@@ -63,15 +64,15 @@ func (c *Client) Follow(ctx context.Context, jobName string, fn func(envelope.Ev
 	return scanEvents(stream, fn)
 }
 
-// Result reads the completed Job's full logs and returns every envelope
-// event found — the idempotent fallback/reconciliation path.
+// Result waits for the agent container to finish, then reads its full logs
+// and returns every envelope event found — the idempotent
+// fallback/reconciliation path. Waiting for termination is what makes the
+// read complete: a non-follow read of a still-running container would miss
+// every event emitted after it.
 func (c *Client) Result(ctx context.Context, jobName string) ([]envelope.Event, error) {
-	pod, err := c.findPod(ctx, jobName)
+	pod, err := c.waitForAgent(ctx, jobName, true)
 	if err != nil {
 		return nil, err
-	}
-	if pod == "" {
-		return nil, fmt.Errorf("jobs: no pods for job %s", jobName)
 	}
 	stream, err := c.logs.Stream(ctx, pod, agentContainerName, false)
 	if err != nil {
@@ -107,12 +108,46 @@ func scanEvents(r io.Reader, fn func(envelope.Event) error) error {
 	return sc.Err()
 }
 
-// waitForPod polls until the Job controller has created a pod for jobName.
-func (c *Client) waitForPod(ctx context.Context, jobName string) (string, error) {
+// waitForAgent polls until jobName's pod exists and its agent container has
+// started — or, when terminated is true, finished — and returns the pod name.
+// The wait matters: while the prepare init container clones the repo the
+// agent container sits in PodInitializing, and opening its log stream then is
+// rejected by the kubelet ("is waiting to start").
+func (c *Client) waitForAgent(ctx context.Context, jobName string, terminated bool) (string, error) {
 	for {
 		pod, err := c.findPod(ctx, jobName)
-		if err != nil || pod != "" {
-			return pod, err
+		if err != nil {
+			return "", err
+		}
+		switch pod {
+		case nil:
+			// No pod: once the Job is terminal or deleted none will appear,
+			// so the logs are unrecoverable.
+			gone, err := c.jobGone(ctx, jobName)
+			if err != nil {
+				return "", err
+			}
+			if gone {
+				return "", fmt.Errorf("jobs: no pods for job %s", jobName)
+			}
+		default:
+			agent := agentStatus(pod)
+			started := agent != nil && agent.State.Waiting == nil
+			finished := agent != nil && agent.State.Terminated != nil
+			if finished || (started && !terminated) {
+				return pod.Name, nil
+			}
+			if terminal := pod.Status.Phase == corev1.PodSucceeded ||
+				pod.Status.Phase == corev1.PodFailed; terminal && !started {
+				// The pod died before the agent ever ran (init failure,
+				// deadline kill, eviction) — there are no logs to read.
+				reason := "no status"
+				if agent != nil && agent.State.Waiting != nil && agent.State.Waiting.Reason != "" {
+					reason = agent.State.Waiting.Reason
+				}
+				return "", fmt.Errorf("jobs: agent container of %s never started (pod phase %s, %s)",
+					jobName, pod.Status.Phase, reason)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -122,13 +157,37 @@ func (c *Client) waitForPod(ctx context.Context, jobName string) (string, error)
 	}
 }
 
-// findPod returns the newest pod of jobName, or "" when none exists yet.
-func (c *Client) findPod(ctx context.Context, jobName string) (string, error) {
+// jobGone reports whether jobName can no longer produce a pod: it is deleted
+// or already terminal.
+func (c *Client) jobGone(ctx context.Context, jobName string) (bool, error) {
+	job, err := c.cs.BatchV1().Jobs(c.cfg.Namespace).Get(ctx, jobName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("jobs: status of %s: %w", jobName, err)
+	}
+	return statusOf(job).Done, nil
+}
+
+// agentStatus returns the agent container's status, or nil before the kubelet
+// has reported one.
+func agentStatus(pod *corev1.Pod) *corev1.ContainerStatus {
+	for i := range pod.Status.ContainerStatuses {
+		if pod.Status.ContainerStatuses[i].Name == agentContainerName {
+			return &pod.Status.ContainerStatuses[i]
+		}
+	}
+	return nil
+}
+
+// findPod returns the newest pod of jobName, or nil when none exists yet.
+func (c *Client) findPod(ctx context.Context, jobName string) (*corev1.Pod, error) {
 	list, err := c.cs.CoreV1().Pods(c.cfg.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: jobNameLabel + "=" + jobName,
 	})
 	if err != nil {
-		return "", fmt.Errorf("jobs: list pods of %s: %w", jobName, err)
+		return nil, fmt.Errorf("jobs: list pods of %s: %w", jobName, err)
 	}
 	var newest *corev1.Pod
 	for i := range list.Items {
@@ -137,8 +196,5 @@ func (c *Client) findPod(ctx context.Context, jobName string) (string, error) {
 			newest = pod
 		}
 	}
-	if newest == nil {
-		return "", nil
-	}
-	return newest.Name, nil
+	return newest, nil
 }
