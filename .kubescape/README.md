@@ -19,12 +19,14 @@ their pod logs (internal/jobs, internal/remedctrl). Its token mount is deliberat
 ServiceAccount in the chart (source, context, webhook, agent) sets `automountServiceAccountToken: false`. The scanner
 flags any mounted token; it cannot know this one is load-bearing.
 
-## remediation-controller-rbac-is-the-minimal-job-lifecycle (C-0007, C-0015, C-0186, C-0267)
+## remediation-controller-rbac-is-the-minimal-job-lifecycle (C-0007, C-0015, C-0037, C-0186, C-0267)
 
 The Role (templates/rbac.yaml) is namespace-scoped to the agent namespace and its verbs are exactly what the Job
 lifecycle needs: create/get/delete on jobs and the per-Job Secret/ConfigMap (always addressed by name — no
-`list`/`watch` on secrets), delete for cleanup. "Cluster takeover" / "list secrets" are the scanner's worst-case reading
-of `create`+`delete`; the blast radius is one namespace that holds only the agent pods.
+`list`/`watch` on secrets), update to owner-reference them to their Job, delete for cleanup. "Cluster takeover" / "list
+secrets" / "CoreDNS poisoning" are the scanner's worst-case reading of `create`+`update`+`delete` — C-0037 in particular
+assumes any configmap write could reach kube-system's `coredns` ConfigMap, which a Role bound only in the agent
+namespace cannot; the blast radius is one namespace that holds only the agent pods.
 
 ## configmaps-c0012-key-name-regex-false-positives (C-0012)
 

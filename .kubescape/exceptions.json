@@ -41,6 +41,7 @@
         "posturePolicies": [
             { "controlID": "C-0007" },
             { "controlID": "C-0015" },
+            { "controlID": "C-0037" },
             { "controlID": "C-0186" },
             { "controlID": "C-0267" }
         ]
