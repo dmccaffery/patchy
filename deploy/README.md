@@ -65,9 +65,11 @@ remediation-controller pushes the agent's changeset through the GitHub API (`int
 `git` binary. Everything runs as uid 65532 with a read-only root filesystem; `/tmp` is an `emptyDir` in every pod, which
 is what keeps the Go runtime's temp-file users working.
 
-The agent image is `node:22-slim` because it must carry the `claude` CLI (`@anthropic-ai/claude-code`, pinned by
-`ARG CLAUDE_VERSION` — Dependabot/renovate should bump it), plus `git` and `/bin/sh` for the init container's clone, and
-the `agent-runner` binary on `PATH` under exactly that name (`internal/jobs` runs `Command: ["agent-runner"]`).
+The agent image is `debian:trixie-slim` carrying the `claude` CLI as Anthropic's self-contained native binary
+(downloaded at build time from the official release bucket, sha256-verified against its manifest, pinned by
+`ARG CLAUDE_VERSION` — Dependabot/renovate should bump it; versions are in lockstep with the `@anthropic-ai/claude-code`
+npm package), plus `git` and `/bin/sh` for the init container's clone, and the `agent-runner` binary on `PATH` under
+exactly that name (`internal/jobs` runs `Command: ["agent-runner"]`).
 
 ## GitHub App
 
