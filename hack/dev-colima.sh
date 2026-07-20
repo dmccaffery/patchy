@@ -9,8 +9,11 @@
 # redeploys the fresh build. See docs/deployment/colima.md.
 set -eu
 
-for tool in colima docker kubectl; do
-  command -v "$tool" >/dev/null || { echo "error: $tool not found (brew install $tool)" >&2; exit 1; }
+for tool in colima docker kubectl docker-buildx; do
+  command -v "$tool" >/dev/null || {
+    echo "error: $tool not found (dotty brew add $tool || brew install $tool)" >&2
+    exit 1
+  }
 done
 
 # start colima with k8s if it isn't running; if it is, trust it and just
@@ -23,10 +26,13 @@ colima status >/dev/null 2>&1 || colima start --kubernetes \
   --cpu "${COLIMA_CPU:-4}" --memory "${COLIMA_MEMORY:-8}" \
   --k3s-arg=--tls-san=localhost
 kubectl --context colima get --raw /readyz >/dev/null || {
-  echo "error: colima is running but k3s is not reachable — start with --kubernetes" >&2; exit 1; }
+  echo "error: colima is running but k3s is not reachable — start with --kubernetes" >&2
+  exit 1
+}
 kubectl --context colima get ingressclass traefik >/dev/null 2>&1 || {
   echo "note: no traefik IngressClass — this colima predates the traefik-enabled start;" >&2
-  echo "      'colima stop' and re-run to reinstall k3s with the ingress controller" >&2; }
+  echo "      'colima stop' and re-run to reinstall k3s with the ingress controller" >&2
+}
 
 mise run snapshot
 
@@ -34,9 +40,12 @@ mise run snapshot
 arch=$(uname -m)
 [ "$arch" = x86_64 ] && arch=amd64
 for app in webhook-controller source-controller context-controller remediation-controller agent-runner; do
-  tag=$(docker images "ghcr.io/bitwise-media-group/patchy/$app" --format '{{.Tag}}' \
-    | grep -- "-$arch$" | head -1)
-  [ -n "$tag" ] || { echo "error: no snapshot image for $app ($arch)" >&2; exit 1; }
+  tag=$(docker images "ghcr.io/bitwise-media-group/patchy/$app" --format '{{.Tag}}' |
+    grep -- "-$arch$" | head -1)
+  [ -n "$tag" ] || {
+    echo "error: no snapshot image for $app ($arch)" >&2
+    exit 1
+  }
   docker tag "ghcr.io/bitwise-media-group/patchy/$app:$tag" "patchy/$app:dev"
 done
 
@@ -45,10 +54,10 @@ kubectl --context colima apply -k deploy/kustomize/overlays/dev
 # optional PAT: the dev overlay wires PATCHY_GITHUB_TOKEN (wins over the
 # placeholder App creds) from this Secret into the GitHub-facing controllers
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-  printf '%s' "$GITHUB_TOKEN" \
-    | kubectl --context colima -n patchy create secret generic patchy-github-token \
-        --from-file=token=/dev/stdin --dry-run=client -o yaml \
-    | kubectl --context colima apply -f -
+  printf '%s' "$GITHUB_TOKEN" |
+    kubectl --context colima -n patchy create secret generic patchy-github-token \
+      --from-file=token=/dev/stdin --dry-run=client -o yaml |
+    kubectl --context colima apply -f -
 else
   echo "note: GITHUB_TOKEN not set — controllers will crash-loop on the placeholder" >&2
   echo "      GitHub creds; see docs/deployment/colima.md#github-credentials" >&2
