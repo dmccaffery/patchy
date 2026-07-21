@@ -17,6 +17,7 @@ ldflags="${LDFLAGS:--s -w \
   -X $module/internal/version.Commit=$commit \
   -X $module/internal/version.BuildDate=$date}"
 mkdir -p bin
-for app in source-controller context-controller remediation-controller webhook-controller agent-runner; do
+for dir in cmd/*/; do
+  app=$(basename "$dir")
   CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o "bin/$app" "./cmd/$app"
 done

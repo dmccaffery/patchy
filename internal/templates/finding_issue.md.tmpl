@@ -1,0 +1,37 @@
+<!-- patchy:finding {{ .Namespace }}/{{ .Name }} -->
+
+## Security finding
+
+{{ .Spec.Title }}
+
+| | |
+| --- | --- |
+| **Source** | `{{ .Spec.Source }}` |
+{{- if .Spec.Repository }}
+| **Repository** | [{{ .Spec.Repository.Name }}]({{ .Spec.Repository.URL }}) |
+{{- end }}
+| **Severity** | {{ or .Spec.Severity "unknown" }} |
+{{- if .Spec.RuleID }}
+| **Rule** | `{{ .Spec.RuleID }}` |
+{{- end }}
+| **Advisories** | {{ range $i, $a := .Spec.Advisories }}{{ if $i }}, {{ end }}`{{ $a }}`{{ end }} |
+| **Phase** | {{ or .Status.Phase "Pending" }} |
+
+{{- if .Spec.Description }}
+
+### Description
+
+{{ .Spec.Description }}
+{{- end }}
+
+### Alerts
+
+{{ range .Spec.Alerts -}}
+- [`{{ .ID }}`]({{ .URL }}){{ range .Locations }} — `{{ .Path }}{{ if .StartLine }}:{{ .StartLine }}{{ end }}`{{ end }}
+{{ end -}}
+{{- if .Spec.OverflowAlerts }}
+…and {{ .Spec.OverflowAlerts }} more alert(s) beyond the tracking cap.
+{{- end }}
+
+---
+*This issue is a read-only projection of the `{{ .Name }}` Finding; patchy re-renders it as the finding progresses.*

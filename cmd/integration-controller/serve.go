@@ -1,0 +1,114 @@
+// Copyright 2026 Bitwise Media Group Ltd.
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"os"
+	"time"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/bitwise-media-group/patchy/internal/cli"
+	"github.com/bitwise-media-group/patchy/internal/integrationctrl"
+	"github.com/bitwise-media-group/patchy/internal/kube"
+	"github.com/bitwise-media-group/patchy/internal/telemetry"
+	"github.com/bitwise-media-group/patchy/internal/version"
+	"github.com/bitwise-media-group/patchy/internal/webhook"
+)
+
+func newServeCmd(opts *cli.Options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run the provider webhook receivers and the Finding projection",
+		RunE:  func(cmd *cobra.Command, _ []string) error { return serve(cmd.Context(), opts) },
+	}
+	f := cmd.Flags()
+	f.Duration("accumulation-window", time.Hour,
+		"how long alerts of one finding family accumulate into a single finding")
+	f.String("namespace", "", "namespace the patchy resources live in (default: POD_NAMESPACE)")
+	f.String("kubeconfig", "", "kubeconfig path (default: in-cluster config)")
+	return cmd
+}
+
+func serve(ctx context.Context, opts *cli.Options) error {
+	prov, shutdown, err := telemetry.Init(ctx, telemetry.Config{
+		Dir:            os.Getenv("PATCHY_TELEMETRY_DIR"),
+		Level:          opts.LogLevel,
+		ServiceName:    "integration-controller",
+		ServiceVersion: version.Version,
+	})
+	if err != nil {
+		prov.Logger.LogAttrs(ctx, slog.LevelWarn, "telemetry disabled", slog.Any("error", err))
+	}
+	defer func() { _ = shutdown(context.WithoutCancel(ctx)) }()
+	log := prov.Logger
+
+	namespace := opts.String("namespace")
+	if namespace == "" {
+		namespace = os.Getenv("POD_NAMESPACE")
+	}
+	if namespace == "" {
+		return errors.New("namespace is required (--namespace or POD_NAMESPACE)")
+	}
+
+	mgr, err := kube.NewManager(kube.Options{
+		Kubeconfig:              opts.String("kubeconfig"),
+		LeaderElectionID:        "patchy-integration-controller-leader",
+		LeaderElectionNamespace: namespace,
+		Namespaces:              []string{namespace},
+		Log:                     log,
+	})
+	if err != nil {
+		return err
+	}
+
+	creds := integrationctrl.NewCreds(mgr.GetAPIReader())
+	ingestor := &integrationctrl.Ingestor{
+		Client:    mgr.GetClient(),
+		Namespace: namespace,
+		Window:    opts.Duration("accumulation-window"),
+		Log:       log,
+	}
+	signals := &integrationctrl.Signals{Client: mgr.GetClient(), Namespace: namespace, Log: log}
+	receiver := &integrationctrl.Receiver{
+		Reader:    mgr.GetClient(),
+		Creds:     creds,
+		Ingest:    ingestor,
+		Signals:   signals,
+		Namespace: namespace,
+		Log:       log,
+	}
+
+	ic := &integrationctrl.IntegrationReconciler{Client: mgr.GetClient(), Creds: creds, Log: log}
+	if err := ic.SetupWithManager(mgr); err != nil {
+		return err
+	}
+	fp := &integrationctrl.FindingReconciler{Client: mgr.GetClient(), Creds: creds, Namespace: namespace, Log: log}
+	if err := fp.SetupWithManager(mgr); err != nil {
+		return err
+	}
+
+	srv := webhook.NewServer(webhook.Config{
+		Addr:       opts.ListenAddr,
+		Path:       "/github/webhooks",
+		SecretsFor: receiver.Secrets,
+	}, log, receiver)
+
+	log.LogAttrs(ctx, slog.LevelInfo, "integration-controller starting",
+		slog.String("addr", opts.ListenAddr),
+		slog.String("namespace", namespace),
+		slog.Duration("accumulation_window", opts.Duration("accumulation-window")))
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return mgr.Start(ctx) })
+	g.Go(func() error { return srv.Run(ctx) })
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
+}

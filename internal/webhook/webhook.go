@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -71,6 +72,11 @@ type Config struct {
 	// Secret is the shared webhook secret used to validate
 	// X-Hub-Signature-256.
 	Secret []byte
+	// SecretsFor, when set, supersedes Secret: it returns the candidate
+	// secrets for a delivery (e.g. the webhook secrets of every configured
+	// Integration) and validation accepts a signature matching any of them.
+	// Secrets are configuration objects, so the candidate set is tiny.
+	SecretsFor func(ctx context.Context) [][]byte
 	// Path is the webhook endpoint path. Default "/webhook".
 	Path string
 	// Workers is the handler pool size. Default 4.
@@ -190,7 +196,13 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !validSignature(s.cfg.Secret, body, r.Header.Get("X-Hub-Signature-256")) {
+	secrets := [][]byte{s.cfg.Secret}
+	if s.cfg.SecretsFor != nil {
+		secrets = s.cfg.SecretsFor(r.Context())
+	}
+	if !slices.ContainsFunc(secrets, func(secret []byte) bool {
+		return validSignature(secret, body, r.Header.Get("X-Hub-Signature-256"))
+	}) {
 		s.count(r.Context(), "", "bad-signature")
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
