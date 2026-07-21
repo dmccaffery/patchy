@@ -94,6 +94,54 @@ spec:
               - protocol: TCP
                 port: 6443
 ---
+# ---- patchy namespace: the status server -----------------------------------
+# Selected separately (component: server, not controller): its surface is a
+# human-facing web page, not webhooks or artifacts.
+#
+# Ingress: 8080 from anywhere — the fronting ingress/gateway lives wherever
+# yours does and kubelet probes come from the node IP; session authentication
+# (and the public-rollups-only unconfigured posture) carries the actual
+# access control. Tighten `from:` to your ingress namespace for L3 on top.
+#
+# Egress: DNS, the Kubernetes API server (cache watches + access reviews),
+# and TCP 443 out (the OIDC issuer for discovery/code exchange, an OTLP
+# collector).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: patchy-status-server
+    namespace: patchy
+    labels:
+        app.kubernetes.io/part-of: patchy
+spec:
+    podSelector:
+        matchLabels:
+            app.kubernetes.io/component: server
+    policyTypes: [Ingress, Egress]
+    ingress:
+        - ports:
+              - protocol: TCP
+                port: 8080
+              - protocol: TCP
+                port: 8081
+    egress:
+        # DNS.
+        - to:
+              - namespaceSelector:
+                    matchLabels:
+                        kubernetes.io/metadata.name: kube-system
+          ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+        # The Kubernetes API server, the OIDC issuer, an OTLP collector.
+        - ports:
+              - protocol: TCP
+                port: 443
+              - protocol: TCP
+                port: 6443
+---
 # ---- patchy-agents namespace: default deny --------------------------------
 # Applies to every pod in the namespace (empty podSelector), both directions.
 # Nothing may reach an agent pod, and an agent pod may reach nothing, except

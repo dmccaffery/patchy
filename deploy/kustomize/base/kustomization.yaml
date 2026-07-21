@@ -24,6 +24,7 @@ resources:
     - deployment-context-controller.yaml
     - deployment-investigation-controller.yaml
     - deployment-remediation-controller.yaml
+    - deployment-status-server.yaml
     - service.yaml
     - networkpolicy.yaml
     # secrets.example.yaml and crs.example.yaml are documentation, not
@@ -54,4 +55,6 @@ images:
     - name: ghcr.io/bitwise-media-group/patchy/remediation-controller
       newTag: latest
     - name: ghcr.io/bitwise-media-group/patchy/agent-runner
+      newTag: latest
+    - name: ghcr.io/bitwise-media-group/patchy/status-server
       newTag: latest

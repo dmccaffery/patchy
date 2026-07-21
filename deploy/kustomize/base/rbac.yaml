@@ -293,6 +293,80 @@ subjects:
       name: patchy-remediation-controller
       namespace: patchy
 ---
+# ---- status-server ----------------------------------------------------------
+# The status page backend: reads Findings/FindingRollups for the projection
+# and writes Finding SPEC only — approve records spec.approval, suspend and
+# resume toggle spec.suspend. Deliberately NO findings/status: the status
+# server never moves a phase (the transition table's writers stay exclusive),
+# and RBAC enforces that at the API layer. No leases (no reconcilers, no
+# leader election), no secrets (the auth config is a mounted volume).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    name: patchy-status-server
+    namespace: patchy
+    labels:
+        app.kubernetes.io/name: status-server
+        app.kubernetes.io/part-of: patchy
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings]
+      verbs: [get, list, watch, update, patch]
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findingrollups]
+      verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    name: patchy-status-server
+    namespace: patchy
+    labels:
+        app.kubernetes.io/name: status-server
+        app.kubernetes.io/part-of: patchy
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: patchy-status-server
+subjects:
+    - kind: ServiceAccount
+      name: patchy-status-server
+      namespace: patchy
+---
+# The one ClusterRole in the base: SubjectAccessReview is a cluster-scoped,
+# non-namespaced create-only API, so a namespaced Role cannot grant it. The
+# status server uses it to answer "may user U <verb> findings in patchy?"
+# for the signed-in user — the custom verbs (approve, suspend, resume) and
+# the native get that gates viewing (see rbac.users.example.yaml for the
+# grant grammar). Review-only: this confers no power to act, only to ask.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: patchy-status-server-authz
+    labels:
+        app.kubernetes.io/name: status-server
+        app.kubernetes.io/part-of: patchy
+rules:
+    - apiGroups: [authorization.k8s.io]
+      resources: [subjectaccessreviews]
+      verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+    name: patchy-status-server-authz
+    labels:
+        app.kubernetes.io/name: status-server
+        app.kubernetes.io/part-of: patchy
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: patchy-status-server-authz
+subjects:
+    - kind: ServiceAccount
+      name: patchy-status-server
+      namespace: patchy
+---
 # ---- patchy-agents: the two job controllers --------------------------------
 # What internal/jobs uses, and nothing more:
 #   jobs      create (Create), get/list/watch (status + orphan reap), delete

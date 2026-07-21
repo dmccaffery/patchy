@@ -1,0 +1,435 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# The status server, in one file (unlike the controllers, which render from
+# shared per-kind templates): it is the only optional component
+# (statusServer.enabled), the only one labelled component=server rather than
+# controller, and the only one with an auth mount and a human-facing
+# exposure — spreading its guards across six kind files would obscure all
+# three facts. Mirrors deploy/kustomize/base/{deployment-status-server,
+# rbac,service,networkpolicy}.yaml.
+{{- if .Values.statusServer.enabled }}
+{{- $vals := .Values.statusServer }}
+{{- $name := "status-server" }}
+{{- /*
+The auth Secret mounted at /etc/patchy/auth: an existing Secret wins; inline
+auth.config renders a chart-managed one; with neither, the (optional) mount
+is empty and the server serves public rollup statistics only.
+*/}}
+{{- $authSecret := $vals.auth.existingSecret | default (printf "%s-status-auth" (include "patchy.fullname" .)) }}
+{{- if and $vals.auth.existingSecret $vals.auth.config }}
+{{- fail "statusServer.auth.existingSecret and statusServer.auth.config are mutually exclusive" }}
+{{- end }}
+{{- if $vals.auth.config }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+    name: {{ $authSecret }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" .) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+type: Opaque
+stringData:
+    config.yaml: |
+        {{- toYaml $vals.auth.config | nindent 8 }}
+{{- end }}
+{{- if $vals.serviceAccount.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    name: {{ include "patchy.serviceAccountName" (dict "root" . "name" $name "vals" $vals) }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" . "extra" $vals.serviceAccount.annotations) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+{{- end }}
+---
+{{- $data := dict
+    "PATCHY_HEALTH_ADDR" ":8081"
+    "PATCHY_LISTEN_ADDR" ":8080"
+    "PATCHY_AUTH_CONFIG" "/etc/patchy/auth/config.yaml"
+    "PATCHY_LOG_LEVEL" .Values.config.logLevel
+}}
+{{- range $k, $v := .Values.config.extra }}
+{{- $_ := set $data $k $v }}
+{{- end }}
+{{- range $k, $v := $vals.config.extra }}
+{{- $_ := set $data $k $v }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: {{ include "patchy.configMapName" (dict "root" . "name" $name) }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" .) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+data:
+    {{- range $k, $v := $data }}
+    {{ $k }}: {{ $v | toString | quote }}
+    {{- end }}
+---
+# Reads Findings/FindingRollups for the projection; writes Finding SPEC only
+# (approve records spec.approval, suspend/resume toggle spec.suspend).
+# Deliberately NO findings/status — the status server never moves a phase —
+# and no leases (no reconcilers, no leader election).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings]
+      verbs: [get, list, watch, update, patch]
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findingrollups]
+      verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+subjects:
+    - kind: ServiceAccount
+      name: {{ include "patchy.serviceAccountName" (dict "root" . "name" $name "vals" $vals) }}
+      namespace: {{ .Release.Namespace }}
+---
+# SubjectAccessReview is cluster-scoped, so this one grant needs a
+# ClusterRole. Review-only: the power to ask "may user U approve findings?",
+# not to act.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}-authz
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+rules:
+    - apiGroups: [authorization.k8s.io]
+      resources: [subjectaccessreviews]
+      verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}-authz
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: {{ include "patchy.fullname" . }}-{{ $name }}-authz
+subjects:
+    - kind: ServiceAccount
+      name: {{ include "patchy.serviceAccountName" (dict "root" . "name" $name "vals" $vals) }}
+      namespace: {{ .Release.Namespace }}
+{{- if $vals.rbac.userRoles }}
+---
+# Example user-facing grant tiers. Bindings are yours to bring: bind Users to
+# the OIDC username claim's values and Groups to the groups claim's values,
+# in the release namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: {{ include "patchy.fullname" . }}-findings-viewer
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings, findingrollups]
+      verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: {{ include "patchy.fullname" . }}-findings-approver
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings, findingrollups]
+      verbs: [get, list]
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings]
+      verbs: [approve]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: {{ include "patchy.fullname" . }}-findings-operator
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings, findingrollups]
+      verbs: [get, list]
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings]
+      verbs: [approve, suspend, resume]
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name "component" "server") | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" .) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+spec:
+    replicas: 1
+    strategy:
+        type: Recreate
+    selector:
+        matchLabels:
+            {{- include "patchy.selectorLabels" (dict "root" . "name" $name) | nindent 12 }}
+    template:
+        metadata:
+            labels:
+                {{- include "patchy.labels" (dict "root" . "name" $name "component" "server") | nindent 16 }}
+                {{- with $vals.podLabels }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+            {{- with include "patchy.annotations" (dict "root" . "extra" $vals.podAnnotations) }}
+            annotations:
+                {{- . | nindent 16 }}
+            {{- end }}
+        spec:
+            serviceAccountName: {{ include "patchy.serviceAccountName" (dict "root" . "name" $name "vals" $vals) }}
+            {{- with .Values.image.pullSecrets }}
+            imagePullSecrets:
+                {{- toYaml . | nindent 16 }}
+            {{- end }}
+            securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                fsGroup: 65532
+                fsGroupChangePolicy: Always
+                seccompProfile:
+                    type: RuntimeDefault
+            containers:
+                - name: server
+                  image: {{ include "patchy.image" (dict "root" . "binary" $name "image" $vals.image) }}
+                  imagePullPolicy: {{ .Values.image.pullPolicy }}
+                  args: ["serve"]
+                  envFrom:
+                      - configMapRef:
+                            name: {{ include "patchy.configMapName" (dict "root" . "name" $name) }}
+                  env:
+                      - name: POD_NAMESPACE
+                        valueFrom:
+                            fieldRef:
+                                fieldPath: metadata.namespace
+                  ports:
+                      - name: http
+                        containerPort: 8080
+                        protocol: TCP
+                      - name: health
+                        containerPort: 8081
+                        protocol: TCP
+                  livenessProbe:
+                      httpGet:
+                          path: /healthz
+                          port: health
+                      initialDelaySeconds: 5
+                      periodSeconds: 20
+                  readinessProbe:
+                      httpGet:
+                          path: /readyz
+                          port: health
+                      initialDelaySeconds: 2
+                      periodSeconds: 10
+                  {{- with $vals.resources }}
+                  resources:
+                      {{- toYaml . | nindent 22 }}
+                  {{- end }}
+                  securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                          drop: ["ALL"]
+                      seccompProfile:
+                          type: RuntimeDefault
+                  volumeMounts:
+                      - name: auth
+                        mountPath: /etc/patchy/auth
+                        readOnly: true
+                      - name: tmp
+                        mountPath: /tmp
+            {{- with $vals.nodeSelector }}
+            nodeSelector:
+                {{- toYaml . | nindent 16 }}
+            {{- end }}
+            {{- with $vals.tolerations }}
+            tolerations:
+                {{- toYaml . | nindent 16 }}
+            {{- end }}
+            {{- with $vals.affinity }}
+            affinity:
+                {{- toYaml . | nindent 16 }}
+            {{- end }}
+            volumes:
+                # optional: with no auth Secret at all the server runs the
+                # rollups-only posture.
+                - name: auth
+                  secret:
+                      secretName: {{ $authSecret }}
+                      optional: true
+                - name: tmp
+                  emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" . "extra" $vals.service.annotations) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+spec:
+    type: {{ $vals.service.type }}
+    selector:
+        {{- include "patchy.selectorLabels" (dict "root" . "name" $name) | nindent 8 }}
+    ports:
+        - name: http
+          port: {{ $vals.service.port }}
+          targetPort: http
+          protocol: TCP
+          {{- with $vals.service.nodePort }}
+          nodePort: {{ . }}
+          {{- end }}
+{{- if $vals.networkPolicy.create }}
+---
+# Ingress: 8080 from anywhere (the fronting ingress/gateway lives wherever
+# yours does; session authentication and the public-rollups-only unconfigured
+# posture carry the access control) plus 8081 probes. Egress: DNS, the
+# Kubernetes API server (cache watches + access reviews), and TCP 443 out
+# (the OIDC issuer, an OTLP collector).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+spec:
+    podSelector:
+        matchLabels:
+            {{- include "patchy.selectorLabels" (dict "root" . "name" $name) | nindent 12 }}
+    policyTypes: [Ingress, Egress]
+    ingress:
+        - ports:
+              - protocol: TCP
+                port: 8080
+              - protocol: TCP
+                port: 8081
+    egress:
+        - to:
+              - namespaceSelector:
+                    matchLabels:
+                        kubernetes.io/metadata.name: kube-system
+          ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+        - ports:
+              - protocol: TCP
+                port: 443
+              - protocol: TCP
+                port: 6443
+{{- end }}
+{{- if $vals.ingress.enabled }}
+---
+# The status page's exposure, plain-Ingress flavour. The whole site routes:
+# the SPA shell, /api, /events, and the sign-in surface (/oauth2, /logout).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" . "extra" $vals.ingress.annotations) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+spec:
+    {{- with $vals.ingress.className }}
+    ingressClassName: {{ . }}
+    {{- end }}
+    {{- with $vals.ingress.tls }}
+    tls:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    rules:
+        - host: {{ required "statusServer.host is required when statusServer.ingress is enabled" $vals.host | quote }}
+          http:
+              paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                        service:
+                            name: {{ include "patchy.fullname" . }}-{{ $name }}
+                            port:
+                                name: http
+{{- end }}
+{{- if $vals.httpRoute.enabled }}
+---
+# The status page's exposure, Gateway API flavour.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+    name: {{ include "patchy.fullname" . }}-{{ $name }}
+    namespace: {{ .Release.Namespace }}
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+    {{- with include "patchy.annotations" (dict "root" . "extra" $vals.httpRoute.annotations) }}
+    annotations:
+        {{- . | nindent 8 }}
+    {{- end }}
+spec:
+    {{- with $vals.httpRoute.parentRefs }}
+    parentRefs:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    hostnames:
+        - {{ required "statusServer.host is required when statusServer.httpRoute is enabled" $vals.host | quote }}
+    rules:
+        - matches:
+              - path:
+                    type: PathPrefix
+                    value: /
+          backendRefs:
+              - name: {{ include "patchy.fullname" . }}-{{ $name }}
+                port: {{ $vals.service.port }}
+{{- end }}
+{{- end }}

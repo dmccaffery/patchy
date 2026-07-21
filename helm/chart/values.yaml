@@ -321,6 +321,80 @@ remediationController:
     networkPolicy:
         create: true
 
+# ---- status-server ----------------------------------------------------------
+# The human-facing status page (templates/status-server.yaml): the findings
+# board/detail with the approve/suspend/resume actions, and the rollup
+# statistics. Rollups are PUBLIC by design; the findings surface always
+# requires authentication (auth below) plus per-user RBAC — native `get` on
+# findings to view, and the custom verbs approve/suspend/resume for the
+# action buttons (rbac.userRoles renders example roles).
+statusServer:
+    # The whole feature: disabling renders none of its resources.
+    enabled: true
+    image: {}
+    config:
+        # Extra PATCHY_* keys for the status server only.
+        extra: {}
+    # Authentication configuration, mounted at /etc/patchy/auth/config.yaml.
+    # With NEITHER field set the server starts in the rollups-only posture:
+    # public statistics, no findings, no sign-in.
+    auth:
+        # Name of an existing Secret with a config.yaml key (see
+        # deploy/kustomize/base/secrets.example.yaml #3). Wins over `config`.
+        existingSecret: ""
+        # Inline configuration rendered into a chart-managed Secret. Prefer
+        # existingSecret in production — the oidc clientSecret is a
+        # credential and values files land in revision history.
+        config: {}
+        # config:
+        #     mode: oidc
+        #     oidc:
+        #         issuerURL: https://sso.example.com
+        #         clientID: patchy-status
+        #         clientSecret: "..."
+    # The status page's external hostname, e.g. patchy-status.example.com.
+    # Required when either exposure flavour below is enabled. Deliberately a
+    # separate hostname from webhook.host: the webhook edge authenticates
+    # HMAC-signed machines, this edge authenticates humans.
+    host: ""
+    ingress:
+        enabled: false
+        className: ""
+        annotations: {}
+        tls: []
+    httpRoute:
+        enabled: false
+        annotations: {}
+        parentRefs: []
+    rbac:
+        # Render the example user-facing ClusterRoles (viewer / approver /
+        # operator). Bindings are yours to bring — see
+        # deploy/kustomize/base/rbac.users.example.yaml.
+        userRoles: false
+    resources:
+        requests:
+            cpu: 50m
+            memory: 64Mi
+        limits:
+            cpu: 500m
+            memory: 256Mi
+    podAnnotations: {}
+    podLabels: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    serviceAccount:
+        create: true
+        name: ""
+        annotations: {}
+    service:
+        type: ClusterIP
+        port: 8080
+        nodePort: null
+        annotations: {}
+    networkPolicy:
+        create: true
+
 # The agent sandbox: the namespace and identity the two job controllers
 # create their ephemeral Jobs in, and the two agent stages' limits. Nothing
 # in this namespace holds a forge credential — the repository arrives as a

@@ -59,6 +59,65 @@
         ]
     },
     {
+        "name": "status-server-needs-the-kubernetes-api",
+        "policyType": "postureExceptionPolicy",
+        "actions": ["alertOnly"],
+        "resources": [
+            {
+                "designatorType": "Attributes",
+                "attributes": { "name": ".*patchy-status-server.*" }
+            }
+        ],
+        "posturePolicies": [
+            { "controlID": "C-0190" },
+            { "controlID": "C-0034" },
+            { "controlID": "C-0053" },
+            { "controlID": "C-0261" }
+        ]
+    },
+    {
+        "name": "status-server-rbac-is-the-minimal-read-and-spec-write",
+        "policyType": "postureExceptionPolicy",
+        "actions": ["alertOnly"],
+        "resources": [
+            {
+                "designatorType": "Attributes",
+                "attributes": { "name": ".*patchy-status-server.*" }
+            }
+        ],
+        "posturePolicies": [
+            { "controlID": "C-0007" },
+            { "controlID": "C-0015" },
+            { "controlID": "C-0037" },
+            { "controlID": "C-0186" },
+            { "controlID": "C-0267" }
+        ]
+    },
+    {
+        "name": "status-server-c0211-selinux-options-are-host-specific",
+        "policyType": "postureExceptionPolicy",
+        "actions": ["alertOnly"],
+        "resources": [
+            {
+                "designatorType": "Attributes",
+                "attributes": { "kind": "Deployment", "name": ".*patchy-status-server" }
+            }
+        ],
+        "posturePolicies": [{ "controlID": "C-0211" }]
+    },
+    {
+        "name": "status-server-c0255-c0258-mounts-its-own-auth-config",
+        "policyType": "postureExceptionPolicy",
+        "actions": ["alertOnly"],
+        "resources": [
+            {
+                "designatorType": "Attributes",
+                "attributes": { "kind": "Deployment", "name": ".*patchy-status-server" }
+            }
+        ],
+        "posturePolicies": [{ "controlID": "C-0255" }, { "controlID": "C-0258" }]
+    },
+    {
         "name": "configmaps-c0012-key-name-regex-false-positives",
         "policyType": "postureExceptionPolicy",
         "actions": ["alertOnly"],

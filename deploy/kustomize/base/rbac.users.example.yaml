@@ -1,0 +1,98 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# DOCUMENTATION, not a resource — deliberately absent from kustomization.yaml
+# (like secrets.example.yaml). Copy into your environment overlay and bind to
+# your own users/SSO groups.
+#
+# The status page's user authorization is ordinary Kubernetes RBAC evaluated
+# per signed-in user (the server asks via SubjectAccessReview; users need no
+# kubeconfig and never talk to the API server themselves):
+#
+#   * viewing findings   — native `get` on findings
+#   * the action buttons — the CUSTOM verbs approve / suspend / resume on
+#                          findings.patchy.bitwisemedia.uk. Custom verbs are
+#                          plain strings to RBAC; nothing else consumes them,
+#                          so granting one confers exactly one button.
+#
+# Rollup statistics are public by design and need no grant.
+#
+# Subjects come from the OIDC claims (auth config claims: username/groups),
+# so bind Users to the username claim's values (e.g. email) and Groups to the
+# groups claim's values. The example bindings are namespaced to `patchy`:
+# grants apply per namespace, uniformly across the findings in it.
+---
+# Read-only: sees the findings board and detail, never an action button.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: patchy-findings-viewer
+    labels:
+        app.kubernetes.io/part-of: patchy
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings, findingrollups]
+      verbs: [get, list]
+---
+# Viewer + the approve button (AwaitingApproval holds and HandedOff revival).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: patchy-findings-approver
+    labels:
+        app.kubernetes.io/part-of: patchy
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings, findingrollups]
+      verbs: [get, list]
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings]
+      verbs: [approve]
+---
+# Viewer + every action: approve, suspend, resume.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: patchy-findings-operator
+    labels:
+        app.kubernetes.io/part-of: patchy
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings, findingrollups]
+      verbs: [get, list]
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings]
+      verbs: [approve, suspend, resume]
+---
+# Example bindings: an SSO group of operators, one individual approver.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    name: patchy-findings-operators
+    namespace: patchy
+    labels:
+        app.kubernetes.io/part-of: patchy
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: patchy-findings-operator
+subjects:
+    - kind: Group
+      apiGroup: rbac.authorization.k8s.io
+      name: security-engineering # a `groups` claim value
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    name: patchy-findings-approvers
+    namespace: patchy
+    labels:
+        app.kubernetes.io/part-of: patchy
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: patchy-findings-approver
+subjects:
+    - kind: User
+      apiGroup: rbac.authorization.k8s.io
+      name: dev@example.com # a `username` claim value

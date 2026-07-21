@@ -1,0 +1,111 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: patchy-status-server
+    namespace: patchy
+    labels:
+        app: status-server
+        app.kubernetes.io/name: status-server
+        app.kubernetes.io/part-of: patchy
+        # Deliberately `server`, not `controller`: the status server runs no
+        # reconcilers — it serves humans. The NetworkPolicies select on this.
+        app.kubernetes.io/component: server
+spec:
+    replicas: 1
+    strategy:
+        type: Recreate
+    selector:
+        matchLabels:
+            app.kubernetes.io/name: status-server
+            app.kubernetes.io/part-of: patchy
+    template:
+        metadata:
+            labels:
+                app: status-server
+                app.kubernetes.io/name: status-server
+                app.kubernetes.io/part-of: patchy
+                app.kubernetes.io/component: server
+        spec:
+            serviceAccountName: patchy-status-server
+            securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                fsGroup: 65532
+                seccompProfile:
+                    type: RuntimeDefault
+            containers:
+                - name: server
+                  # Built from Dockerfile.controller (repo root)
+                  # (TARGET=status-server in .goreleaser.yaml).
+                  image: ghcr.io/bitwise-media-group/patchy/status-server:latest
+                  args: ["serve"]
+                  envFrom:
+                      - configMapRef:
+                            name: patchy-config
+                  env:
+                      - name: POD_NAMESPACE
+                        valueFrom:
+                            fieldRef:
+                                fieldPath: metadata.namespace
+                      # The mounted auth configuration. The Secret volume
+                      # below is optional: with no Secret the file is absent
+                      # and the server runs the rollups-only posture — public
+                      # statistics, no findings access, no sign-in. Mount a
+                      # real config (see secrets.example.yaml) to enable the
+                      # findings surface.
+                      - name: PATCHY_AUTH_CONFIG
+                        value: /etc/patchy/auth/config.yaml
+                  ports:
+                      - name: http
+                        containerPort: 8080
+                        protocol: TCP
+                      - name: health
+                        containerPort: 8081
+                        protocol: TCP
+                  livenessProbe:
+                      httpGet:
+                          path: /healthz
+                          port: health
+                      initialDelaySeconds: 5
+                      periodSeconds: 20
+                  readinessProbe:
+                      httpGet:
+                          path: /readyz
+                          port: health
+                      initialDelaySeconds: 2
+                      periodSeconds: 10
+                  resources:
+                      requests:
+                          cpu: 50m
+                          memory: 64Mi
+                      limits:
+                          cpu: 500m
+                          memory: 256Mi
+                  securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                          drop: ["ALL"]
+                      seccompProfile:
+                          type: RuntimeDefault
+                  volumeMounts:
+                      - name: auth
+                        mountPath: /etc/patchy/auth
+                        readOnly: true
+                      - name: tmp
+                        mountPath: /tmp
+            volumes:
+                # Auth configuration (see secrets.example.yaml). optional:
+                # absent means rollups-only.
+                - name: auth
+                  secret:
+                      secretName: patchy-status-auth
+                      optional: true
+                # The root filesystem is read-only; Go's os.CreateTemp and
+                # the HTTP stack want a writable /tmp.
+                - name: tmp
+                  emptyDir: {}

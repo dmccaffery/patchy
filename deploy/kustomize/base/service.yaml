@@ -1,14 +1,17 @@
 # Copyright 2026 Bitwise Media Group Ltd.
 # SPDX-License-Identifier: MIT
 #
-# Two Services, because only two things are dialled by anything:
+# Three Services, because only three things are dialled by anything:
 #
-#   * patchy-integration-controller:8080 — the single internet-facing entry
-#     point (the provider webhook receivers, e.g. POST /github/webhooks).
+#   * patchy-integration-controller:8080 — the machine-facing entry point
+#     (the provider webhook receivers, e.g. POST /github/webhooks).
 #     Put an Ingress / Gateway in front of it in your environment overlay.
 #   * patchy-source-controller:9790 — the artifact server the agent pods
 #     fetch SHA-pinned repository tarballs from (in-cluster only; the
 #     NetworkPolicies restrict it to the patchy-agents namespace).
+#   * patchy-status-server:8080 — the human-facing status page. Front it
+#     with your Ingress / Gateway too (a separate hostname from the webhook
+#     endpoint keeps authn concerns apart).
 #
 # The other controllers serve nothing but kubelet probes on :8081, which hit
 # the pod directly — no Service needed.
@@ -49,4 +52,23 @@ spec:
         - name: artifact
           port: 9790
           targetPort: artifact
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: patchy-status-server
+    namespace: patchy
+    labels:
+        app.kubernetes.io/name: status-server
+        app.kubernetes.io/part-of: patchy
+spec:
+    type: ClusterIP
+    selector:
+        app.kubernetes.io/name: status-server
+        app.kubernetes.io/part-of: patchy
+    ports:
+        - name: http
+          port: 8080
+          targetPort: http
           protocol: TCP

@@ -313,6 +313,74 @@
                 "networkPolicy": { "$ref": "#/definitions/controllerNetworkPolicy" }
             }
         },
+        "statusServer": {
+            "type": "object",
+            "description": "The human-facing status page: public rollup statistics, authenticated findings review, RBAC-gated approve/suspend/resume",
+            "additionalProperties": false,
+            "required": ["enabled", "auth", "ingress", "httpRoute", "rbac", "serviceAccount", "service", "networkPolicy"],
+            "properties": {
+                "enabled": { "type": "boolean" },
+                "image": { "$ref": "#/definitions/imageOverride" },
+                "config": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "logLevel": { "$ref": "#/definitions/logLevel" },
+                        "extra": { "$ref": "#/definitions/extraEnv" }
+                    }
+                },
+                "auth": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "existingSecret": { "type": "string" },
+                        "config": {
+                            "type": "object",
+                            "description": "Inline auth config rendered into a chart-managed Secret (config.yaml); prefer existingSecret in production"
+                        }
+                    }
+                },
+                "host": { "type": "string" },
+                "ingress": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["enabled"],
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "className": { "type": "string" },
+                        "annotations": { "type": "object" },
+                        "tls": { "type": "array", "items": { "type": "object" } }
+                    }
+                },
+                "httpRoute": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["enabled"],
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "annotations": { "type": "object" },
+                        "parentRefs": { "type": "array", "items": { "type": "object" } }
+                    }
+                },
+                "rbac": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["userRoles"],
+                    "properties": {
+                        "userRoles": { "type": "boolean" }
+                    }
+                },
+                "resources": { "type": "object" },
+                "podAnnotations": { "type": "object" },
+                "podLabels": { "type": "object" },
+                "nodeSelector": { "type": "object" },
+                "tolerations": { "type": "array", "items": { "type": "object" } },
+                "affinity": { "type": "object" },
+                "serviceAccount": { "$ref": "#/definitions/serviceAccount" },
+                "service": { "$ref": "#/definitions/service" },
+                "networkPolicy": { "$ref": "#/definitions/controllerNetworkPolicy" }
+            }
+        },
         "agent": {
             "type": "object",
             "additionalProperties": false,
