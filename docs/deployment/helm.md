@@ -17,9 +17,7 @@ The chart requires Kubernetes ≥ 1.34 (the oldest line not yet end-of-life) and
 ## Values
 
 Values are validated against `values.schema.json` — a typo'd or relocated key fails the install instead of being
-silently ignored. The layout follows the flux-operator convention: everything scoped to one controller lives under its
-top-level key (`sourceController`, `contextController`, `remediationController`); only genuinely shared settings are
-global.
+silently ignored.
 
 ### Global: images, GitHub, Anthropic
 

@@ -19,6 +19,22 @@ description = "sign and deliver a webhook fixture to a running controller"
 dir = "{{cwd}}/e2e"
 run = "go run ./replay"
 
+# Everything derived from api/v1alpha1: deepcopy methods (controller-gen
+# object) and the CRD manifests for both kustomize and helm (hack/codegen.sh).
+# CI treats a dirty tree after this task as drift and fails.
+[codegen]
+description = "regenerate deepcopy + CRD manifests from api/v1alpha1"
+dir = "{{cwd}}"
+run = "./hack/codegen.sh"
+
+# Tests that need a real API server (CRD schema validation, controller
+# integration): setup-envtest provisions kube-apiserver/etcd, then the suites
+# that skip without KUBEBUILDER_ASSETS run for real.
+[envtest]
+description = "run envtest-backed tests (real kube-apiserver)"
+dir = "{{cwd}}"
+run = "./hack/envtest.sh"
+
 # Redefines the archetype's build task (whole-task replacement): patchy is
 # multi-binary — one controller per concern plus the agent runtime — so the
 # single-app go-build is replaced by a loop over cmd/ (hack/build.sh; the

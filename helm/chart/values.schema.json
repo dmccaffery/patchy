@@ -98,6 +98,15 @@
         },
         "nameOverride": { "type": "string" },
         "fullnameOverride": { "type": "string" },
+        "crds": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "patchy.bitwisemedia.uk CRD installation; keep guards the all-time FindingRollup data on uninstall",
+            "properties": {
+                "install": { "type": "boolean" },
+                "keep": { "type": "boolean" }
+            }
+        },
         "commonLabels": { "type": "object" },
         "commonAnnotations": { "type": "object" },
         "github": {

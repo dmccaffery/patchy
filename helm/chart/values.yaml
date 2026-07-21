@@ -2,15 +2,15 @@
 # SPDX-License-Identifier: MIT
 #
 # Default values mirror deploy/kustomize/base. The layout follows the
-# flux-operator chart convention: everything scoped to one controller — its
-# image, config, scheduling, serviceAccount, service, and networkPolicy —
-# lives under that controller's top-level key (sourceController,
-# contextController, remediationController); only settings that are genuinely
-# shared stay global, including `webhook`, the single external entry point
-# in front of all three controllers. The controllers install into the
-# release namespace; the agent sandbox namespace is created by the chart (see
-# `agent:` below). The three Secrets patchy expects are NOT created here — see
-# the chart README and deploy/kustomize/base/secrets.example.yaml.
+# a standard layout convention — its image, config, scheduling, serviceAccount,
+# service, and networkPolicy — lives under that controller's top-level key
+# (sourceController, contextController, remediationController); only settings
+# that are genuinely shared stay global, including `webhook`, the single
+# external entry point in front of all three controllers. The controllers
+# install into the release namespace; the agent sandbox namespace is created by
+# the chart (see `agent:` below). The three Secrets patchy expects are NOT
+# created here — see the chart README and
+# deploy/kustomize/base/secrets.example.yaml.
 
 # Every image is <repository>/<binary>, the names goreleaser publishes. `tag`
 # defaults to v<appVersion>. Per-component overrides live under
@@ -26,6 +26,14 @@ image:
 
 nameOverride: ""
 fullnameOverride: ""
+
+# The patchy.bitwisemedia.uk CRDs. They render as templates (not the crds/
+# directory) so upgrades track schema changes; `keep` stamps
+# helm.sh/resource-policy: keep so uninstall never deletes the CRDs — and
+# with them the all-time FindingRollup statistics.
+crds:
+    install: true
+    keep: true
 
 # Extra labels stamped on every object the chart renders.
 commonLabels: {}

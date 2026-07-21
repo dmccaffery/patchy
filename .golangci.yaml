@@ -39,6 +39,12 @@ linters:
                 - all
     exclusions:
         generated: lax
+        rules:
+            # kubebuilder markers are single-line by grammar — they cannot be
+            # wrapped to satisfy lll.
+            - linters:
+                  - lll
+              source: '^\s*// \+kubebuilder:'
         paths:
             - third_party$
             - builtin$

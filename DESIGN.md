@@ -166,6 +166,3 @@ security-remediation-elapsed: "<remediation-elapsed-time>"
 
 - may or may not be baked into the remediation controller
 - shared harness / prompts / skills execution runtime (used to invoke coding agents with pre-defined prompts / expectations)
-
-Follow our conventions for golang: see @../evolve/ and @../dotty/ for examples. IF we use kubernetes controllers, follow
-the conventions used by fluxcd (see <https://github.com/fluxcd/flux2> and <https://github.com/fluxcd/source-controller>)
