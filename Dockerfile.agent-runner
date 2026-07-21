@@ -64,9 +64,12 @@ RUN case "${TARGETARCH}" in \
 
 FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
 
+# curl serves the init container's credential-less artifact fetch (the
+# SHA-pinned repo tarball from source-controller); git serves the agent's
+# commit/diff flow.
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates git \
+    && apt-get install --no-install-recommends -y ca-certificates curl git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=fetch /claude /usr/local/bin/claude

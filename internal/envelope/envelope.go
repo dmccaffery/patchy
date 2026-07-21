@@ -14,8 +14,10 @@ import (
 const Prefix = "PATCHY-EVENT: "
 
 // Version is the current envelope schema version. Version 2 replaced the
-// git-bundle payload with the structured Changeset.
-const Version = 2
+// git-bundle payload with the structured Changeset; version 3 added the
+// investigation event (exploitability/likelihood/impact analyses) and keys
+// events by finding name.
+const Version = 3
 
 // Type discriminates events.
 type Type string
@@ -23,7 +25,10 @@ type Type string
 // The event types: one per completed stage, plus fatal for a runner that
 // could not produce a stage result at all.
 const (
+	// TypeClassification survives only for the legacy combined pipeline; the
+	// split pipeline emits TypeInvestigation.
 	TypeClassification Type = "classification"
+	TypeInvestigation  Type = "investigation"
 	TypeRemediation    Type = "remediation"
 	TypeFatal          Type = "fatal"
 )
@@ -87,6 +92,39 @@ type Classification struct {
 	AwaitApproval bool `json:"await_approval"`
 }
 
+// AnalysisResult is one investigation dimension: a rating plus a short
+// justification (the full reasoning lives in the report markdown).
+type AnalysisResult struct {
+	// Rating is none|low|medium|high|critical.
+	Rating string `json:"rating"`
+	// Summary is the agent's short justification.
+	Summary string `json:"summary,omitempty"`
+}
+
+// Investigation is the analysis-stage event payload (version 3): the agent's
+// exploitability, likelihood, and impact assessments plus its verdict. The
+// runner never decides continuation — the controller routes on the verdict.
+type Investigation struct {
+	Stage
+	ReportMarkdown string         `json:"report_markdown,omitempty"`
+	Exploitability AnalysisResult `json:"exploitability"`
+	Likelihood     AnalysisResult `json:"likelihood"`
+	Impact         AnalysisResult `json:"impact"`
+	Recommendation string         `json:"recommendation,omitempty"`
+	Priority       string         `json:"priority,omitempty"`
+	Severity       string         `json:"severity,omitempty"`
+	Confidence     float64        `json:"confidence,omitempty"`
+	// RemediationModel/MaxTurns/TokenBudget are the clamped stage-2
+	// parameters the analysis suggested (the controller re-clamps before
+	// launching the remediation job).
+	RemediationModel string `json:"remediation_model,omitempty"`
+	MaxTurns         int    `json:"max_turns,omitempty"`
+	TokenBudget      int    `json:"token_budget,omitempty"`
+	// AwaitApproval marks the breaking-change hold (a better-but-breaking
+	// fix exists): remediation waits for a human approval.
+	AwaitApproval bool `json:"await_approval"`
+}
+
 // FileChange is one file created or modified on the remediation branch.
 type FileChange struct {
 	Path string `json:"path"`
@@ -128,9 +166,12 @@ type Event struct {
 	Type Type `json:"type"`
 	// Issue context so events are self-contained.
 	Repo  string `json:"repo"`
-	Issue int    `json:"issue"`
+	Issue int    `json:"issue,omitempty"`
+	// Finding names the owning Finding resource (split pipeline).
+	Finding string `json:"finding,omitempty"`
 
 	Classification *Classification `json:"classification,omitempty"`
+	Investigation  *Investigation  `json:"investigation,omitempty"`
 	Remediation    *Remediation    `json:"remediation,omitempty"`
 	// Error is set on fatal events.
 	Error string `json:"error,omitempty"`

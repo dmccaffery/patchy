@@ -117,6 +117,21 @@ func RenderClassifyPrompt(p ClassifyPrompt) (string, error) {
 	return render("prompt_classify.md.tmpl", p)
 }
 
+// InvestigatePrompt is the data for the analysis-stage prompt (the split
+// pipeline's stage 1: exploitability/likelihood/impact plus the verdict).
+type InvestigatePrompt struct {
+	IssuePath          string
+	ReportPath         string
+	AllowedModels      []string
+	MaxTurnsCeiling    int
+	TokenBudgetCeiling int
+}
+
+// RenderInvestigatePrompt renders the investigation prompt.
+func RenderInvestigatePrompt(p InvestigatePrompt) (string, error) {
+	return render("prompt_investigate.md.tmpl", p)
+}
+
 // RemediatePrompt is the data for the stage-2 (remediation) prompt.
 type RemediatePrompt struct {
 	IssuePath          string

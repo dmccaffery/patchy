@@ -76,6 +76,12 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	var params remediationParams
 	switch a.cfg.Phase {
+	case PhaseInvestigate:
+		// The split pipeline's analysis stage: one event, no continuation —
+		// the controller routes on the verdict.
+		ev := a.investigate(ctx)
+		a.emit(envelope.Event{Type: envelope.TypeInvestigation, Investigation: ev})
+		return nil
 	case PhaseFull:
 		ev := a.classify(ctx)
 		a.emit(envelope.Event{Type: envelope.TypeClassification, Classification: ev})
@@ -84,19 +90,14 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		params = remediationParams{model: ev.RemediationModel, maxTurns: ev.MaxTurns, budget: ev.TokenBudget}
 	case PhaseRemediate:
-		// The /approve re-run: the controller supplies the classification it
-		// re-read from the issue; thresholds and holds are bypassed by fiat.
-		raw, err := os.ReadFile(a.cfg.inputClassification())
-		if err != nil {
-			a.emit(envelope.Event{Type: envelope.TypeFatal, Error: "input classification: " + err.Error()})
-			return err
-		}
-		cls, err := report.ParseClassification(raw)
-		if err != nil {
+		// The controller supplies the analysis this run executes — the split
+		// pipeline's investigation.md, or the legacy classification.md on
+		// the /approve re-run. Thresholds and holds are bypassed by fiat.
+		var err error
+		if params, err = a.remediationInput(); err != nil {
 			a.emit(envelope.Event{Type: envelope.TypeFatal, Error: err.Error()})
 			return err
 		}
-		params = a.clamp(cls)
 	}
 
 	rev := a.remediate(ctx, params)
@@ -325,6 +326,117 @@ func (a *Agent) budgetWatcher(h harness.Harness, budget int) func([]byte) (bool,
 
 // clamp validates the classification's stage-2 suggestions against the
 // allowlist and the remediation ceilings, logging every correction.
+// investigate runs the analysis stage and folds everything into the event
+// payload. It mirrors classify but parses the investigation contract and
+// never decides continuation.
+func (a *Agent) investigate(ctx context.Context) *envelope.Investigation {
+	ev := &envelope.Investigation{Stage: envelope.Stage{
+		Harness: a.cfg.ClassifyHarness,
+		Model:   a.cfg.ClassifyModel,
+	}}
+
+	h, ok := harness.ByID(a.cfg.ClassifyHarness)
+	if !ok {
+		ev.Outcome = envelope.OutcomeRuntimeError
+		ev.Detail = fmt.Sprintf("unknown harness %q", a.cfg.ClassifyHarness)
+		return ev
+	}
+	prompt, err := templates.RenderInvestigatePrompt(templates.InvestigatePrompt{
+		IssuePath:          a.cfg.issuePath(),
+		ReportPath:         a.cfg.investigationPath(),
+		AllowedModels:      a.cfg.ModelAllowlist,
+		MaxTurnsCeiling:    a.cfg.RemediateMaxTurns,
+		TokenBudgetCeiling: a.cfg.RemediateTokenBudget,
+	})
+	if err != nil {
+		ev.Outcome = envelope.OutcomeRuntimeError
+		ev.Detail = err.Error()
+		return ev
+	}
+
+	res, runErr := a.exec.Run(ctx, h.PromptSpec(a.cfg.repoDir(), harness.PromptRequest{
+		Prompt:          prompt,
+		Model:           a.cfg.ClassifyModel,
+		MaxTurns:        a.cfg.ClassifyMaxTurns,
+		AllowedTools:    classifyAllowedTools,
+		DisallowedTools: classifyDisallowedTools,
+		SessionID:       a.newSessionID(),
+		AddDirs:         []string{a.cfg.Workspace},
+	}), a.cfg.ClassifyTimeout, a.budgetWatcher(h, a.cfg.ClassifyTokenBudget))
+	a.fillStage(&ev.Stage, h, res)
+
+	if res.Aborted {
+		ev.Outcome = envelope.OutcomeBudgetExceeded
+		ev.Detail = res.AbortReason
+		return ev
+	}
+	if outcome, detail := stageOutcome(h, res, runErr); outcome != envelope.OutcomeOK {
+		ev.Outcome, ev.Detail = outcome, detail
+		return ev
+	}
+
+	raw, err := os.ReadFile(a.cfg.investigationPath())
+	if err != nil {
+		ev.Outcome = envelope.OutcomeReportMissing
+		ev.Detail = err.Error()
+		return ev
+	}
+	inv, err := report.ParseInvestigation(raw)
+	if err != nil {
+		ev.Outcome = envelope.OutcomeReportInvalid
+		ev.Detail = err.Error()
+		return ev
+	}
+
+	ev.Outcome = envelope.OutcomeOK
+	ev.ReportMarkdown = string(raw)
+	ev.Exploitability = envelope.AnalysisResult{
+		Rating: string(inv.Exploitability.Rating), Summary: inv.Exploitability.Summary,
+	}
+	ev.Likelihood = envelope.AnalysisResult{Rating: string(inv.Likelihood.Rating), Summary: inv.Likelihood.Summary}
+	ev.Impact = envelope.AnalysisResult{Rating: string(inv.Impact.Rating), Summary: inv.Impact.Summary}
+	ev.Recommendation = string(inv.Recommendation)
+	ev.Priority = string(inv.Priority)
+	ev.Severity = string(inv.Severity)
+	ev.Confidence = *inv.Confidence
+	ev.AwaitApproval = inv.Recommendation == report.RecommendRemediate && inv.BreakingChangeAvailable
+	if inv.Recommendation == report.RecommendRemediate {
+		params := a.clampInvestigation(inv)
+		ev.RemediationModel = params.model
+		ev.MaxTurns = params.maxTurns
+		ev.TokenBudget = params.budget
+	}
+	return ev
+}
+
+// remediationInput reads the controller-provided analysis: the split
+// pipeline's investigation.md when present, else the legacy
+// classification.md.
+func (a *Agent) remediationInput() (remediationParams, error) {
+	if raw, err := os.ReadFile(a.cfg.inputInvestigation()); err == nil {
+		inv, err := report.ParseInvestigation(raw)
+		if err != nil {
+			return remediationParams{}, err
+		}
+		return a.clampInvestigation(inv), nil
+	}
+	raw, err := os.ReadFile(a.cfg.inputClassification())
+	if err != nil {
+		return remediationParams{}, fmt.Errorf("input analysis: %w", err)
+	}
+	cls, err := report.ParseClassification(raw)
+	if err != nil {
+		return remediationParams{}, err
+	}
+	return a.clamp(cls), nil
+}
+
+// clampInvestigation holds the investigation's suggested stage-2 parameters
+// to the configured ceilings/allowlist.
+func (a *Agent) clampInvestigation(inv *report.Investigation) remediationParams {
+	return a.clamp(&report.Classification{Model: inv.Model, MaxTurns: inv.MaxTurns, TokenBudget: inv.TokenBudget})
+}
+
 func (a *Agent) clamp(cls *report.Classification) remediationParams {
 	p := remediationParams{model: cls.Model, maxTurns: cls.MaxTurns, budget: cls.TokenBudget}
 	if !slices.Contains(a.cfg.ModelAllowlist, p.model) {
@@ -361,6 +473,11 @@ func (a *Agent) packageChangeset(ctx context.Context, baseSHA string,
 		return envelope.OutcomeCommitFailed, err.Error()
 	}
 	cs, err := buildChangeset(ctx, a.cfg.repoDir(), baseSHA, a.cfg.branch(), a.cfg.ChangesetMaxBytes)
+	if err == nil && a.cfg.BaseSHA != "" {
+		// Artifact mode: the local base is synthetic; the push parents the
+		// controller-resolved remote SHA.
+		cs.BaseSHA = a.cfg.BaseSHA
+	}
 	if err != nil {
 		if errors.Is(err, errChangesetTooLarge) {
 			return envelope.OutcomeChangesetTooLarge, err.Error()
@@ -408,7 +525,7 @@ func stageOutcome(h harness.Harness, res runner.Result, runErr error) (envelope.
 
 // emit writes one envelope event to the runner's stdout.
 func (a *Agent) emit(e envelope.Event) {
-	e.Repo, e.Issue = a.cfg.Repo, a.cfg.Issue
+	e.Repo, e.Issue, e.Finding = a.cfg.Repo, a.cfg.Issue, a.cfg.Finding
 	line, err := e.Encode()
 	if err != nil {
 		a.cfg.Log.Error("encode envelope event", "error", err)

@@ -19,6 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	v1alpha1 "github.com/bitwise-media-group/patchy/api/v1alpha1"
 )
 
 // Label keys and values identifying the Jobs patchy owns. The repo label is
@@ -54,6 +56,7 @@ const (
 	secretKeyToken          = "token"
 	secretKeyIssue          = "issue.md"
 	secretKeyClassification = "classification.md"
+	secretKeyInvestigation  = "investigation.md"
 )
 
 // runAsUser is the fixed non-root UID (distroless "nonroot").
@@ -80,6 +83,33 @@ git checkout -q --detach FETCH_HEAD
 unset auth GITHUB_TOKEN
 mkdir -p /workspace/input
 cp /patchy/input/issue.md /workspace/input/issue.md
+if [ -f /patchy/input/classification.md ]; then
+  cp /patchy/input/classification.md /workspace/input/classification.md
+fi
+`
+
+// prepareArtifactScript is the split pipeline's init shell: a credential-less
+// fetch of the SHA-pinned tree tarball from source-controller's artifact
+// server (digest-verified end to end), followed by a synthetic git base
+// commit — the agent's commit/diff flow needs a local base, and diffs against
+// the synthetic commit are identical to diffs against the real remote SHA the
+// controller pushes on. No forge credential exists anywhere in the pod.
+const prepareArtifactScript = `set -eu
+mkdir -p /workspace/repo
+cd /workspace/repo
+curl -fsSL "$PATCHY_ARTIFACT_URL" -o /tmp/src.tar.gz
+echo "$PATCHY_ARTIFACT_DIGEST  /tmp/src.tar.gz" | sha256sum -c - >/dev/null
+tar -xzf /tmp/src.tar.gz --strip-components=1
+rm -f /tmp/src.tar.gz
+git init -q
+git add -A
+git -c user.name=patchy -c user.email=patchy@invalid commit -qm "base $PATCHY_BASE_SHA"
+git checkout -q --detach HEAD
+mkdir -p /workspace/input
+cp /patchy/input/issue.md /workspace/input/issue.md
+if [ -f /patchy/input/investigation.md ]; then
+  cp /patchy/input/investigation.md /workspace/input/investigation.md
+fi
 if [ -f /patchy/input/classification.md ]; then
   cp /patchy/input/classification.md /workspace/input/classification.md
 fi
@@ -121,7 +151,23 @@ type Spec struct {
 	IssueMarkdown string // the issue handoff file content
 	// ClassificationMarkdown is optional: the /approve remediate-only re-run.
 	ClassificationMarkdown string
+
+	// Split-pipeline fields. Kind selects the v2 flow: the init container
+	// fetches ArtifactURL (digest-verified) instead of cloning, no forge
+	// credential enters the pod, and Jobs are keyed by Finding/Owner labels.
+	Kind    string // "investigation" | "remediation"; empty = legacy flow
+	Owner   string // owning Investigation/Remediation name
+	Finding string // owning Finding name
+	// ArtifactURL/ArtifactDigest locate and pin the repo tarball.
+	ArtifactURL    string
+	ArtifactDigest string
+	// InvestigationMarkdown is the analysis handed to a remediation run.
+	InvestigationMarkdown string
 }
+
+// artifactMode reports whether the spec uses the credential-less tarball
+// flow.
+func (s Spec) artifactMode() bool { return s.ArtifactURL != "" }
 
 // Client creates and observes agent Jobs in one namespace.
 type Client struct {
@@ -154,11 +200,23 @@ func Name(repo string, issue, attempt int) string {
 	return fmt.Sprintf("patchy-%x-i%d-a%d", sum[:5], issue, attempt)
 }
 
+// NameFor is the split pipeline's deterministic Job (and Secret) name:
+// patchy-<findinghash>-{inv|rem}-a<attempt>. The kind discriminator keeps the
+// two job controllers sharing one namespace out of each other's way.
+func NameFor(finding, kind string, attempt int32) string {
+	sum := sha256.Sum256([]byte(finding))
+	short := map[string]string{"investigation": "inv", "remediation": "rem"}[kind]
+	return fmt.Sprintf("patchy-%x-%s-a%d", sum[:5], short, attempt)
+}
+
 // Create builds and creates the per-Job Secret (token + issue markdown),
 // then the Job itself, then owner-references the Secret to the Job so it is
 // garbage collected with it. Returns the Job name.
 func (c *Client) Create(ctx context.Context, spec Spec) (string, error) {
 	name := Name(spec.Repo, spec.Issue, spec.Attempt)
+	if spec.Kind != "" {
+		name = NameFor(spec.Finding, spec.Kind, int32(spec.Attempt))
+	}
 	job, err := c.buildJob(name, spec)
 	if err != nil {
 		return "", err
@@ -197,11 +255,17 @@ func (c *Client) Create(ctx context.Context, spec Spec) (string, error) {
 // and the handoff markdown files.
 func buildSecret(name, namespace string, spec Spec) *corev1.Secret {
 	data := map[string][]byte{
-		secretKeyToken: []byte(spec.Token),
 		secretKeyIssue: []byte(spec.IssueMarkdown),
+	}
+	if !spec.artifactMode() {
+		// Legacy clone flow only: the artifact flow is credential-less.
+		data[secretKeyToken] = []byte(spec.Token)
 	}
 	if spec.ClassificationMarkdown != "" {
 		data[secretKeyClassification] = []byte(spec.ClassificationMarkdown)
+	}
+	if spec.InvestigationMarkdown != "" {
+		data[secretKeyInvestigation] = []byte(spec.InvestigationMarkdown)
 	}
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: jobLabels(spec)},
@@ -270,21 +334,31 @@ func volumes(secretName string) []corev1.Volume {
 // prepareContainer clones the repo and stages the handoff files. It is the
 // only container that can see the GitHub token.
 func (c *Client) prepareContainer(secretName string, spec Spec, res corev1.ResourceRequirements) corev1.Container {
-	return corev1.Container{
-		Name:    initContainerName,
-		Image:   c.cfg.Image,
-		Command: []string{"/bin/sh", "-c", prepareScript},
-		Env: []corev1.EnvVar{
-			{Name: "HOME", Value: workspaceDir},
-			{Name: "PATCHY_CLONE_URL", Value: spec.CloneURL},
-			{Name: "PATCHY_BASE_SHA", Value: spec.BaseSHA},
-			{Name: "GITHUB_TOKEN", ValueFrom: &corev1.EnvVarSource{
+	script := prepareScript
+	env := []corev1.EnvVar{
+		{Name: "HOME", Value: workspaceDir},
+		{Name: "PATCHY_BASE_SHA", Value: spec.BaseSHA},
+	}
+	if spec.artifactMode() {
+		script = prepareArtifactScript
+		env = append(env,
+			corev1.EnvVar{Name: "PATCHY_ARTIFACT_URL", Value: spec.ArtifactURL},
+			corev1.EnvVar{Name: "PATCHY_ARTIFACT_DIGEST", Value: spec.ArtifactDigest})
+	} else {
+		env = append(env,
+			corev1.EnvVar{Name: "PATCHY_CLONE_URL", Value: spec.CloneURL},
+			corev1.EnvVar{Name: "GITHUB_TOKEN", ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
 					Key:                  secretKeyToken,
 				},
-			}},
-		},
+			}})
+	}
+	return corev1.Container{
+		Name:    initContainerName,
+		Image:   c.cfg.Image,
+		Command: []string{"/bin/sh", "-c", script},
+		Env:     env,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volWorkspace, MountPath: workspaceDir},
 			{Name: volTmp, MountPath: "/tmp"},
@@ -323,6 +397,8 @@ var reservedEnv = map[string]bool{
 	"PATCHY_REPO":             true,
 	"PATCHY_ISSUE":            true,
 	"PATCHY_PHASE":            true,
+	"PATCHY_FINDING":          true,
+	"PATCHY_BASE_SHA":         true,
 	"ANTHROPIC_API_KEY":       true,
 	"CLAUDE_CODE_OAUTH_TOKEN": true,
 	"ANTHROPIC_AUTH_TOKEN":    true,
@@ -330,7 +406,7 @@ var reservedEnv = map[string]bool{
 }
 
 func (c *Client) agentEnv(spec Spec) []corev1.EnvVar {
-	env := make([]corev1.EnvVar, 0, len(c.cfg.Env)+6)
+	env := make([]corev1.EnvVar, 0, len(c.cfg.Env)+8)
 	env = append(env,
 		// HOME must be writable under readOnlyRootFilesystem.
 		corev1.EnvVar{Name: "HOME", Value: workspaceDir},
@@ -338,6 +414,13 @@ func (c *Client) agentEnv(spec Spec) []corev1.EnvVar {
 		corev1.EnvVar{Name: "PATCHY_REPO", Value: spec.Repo},
 		corev1.EnvVar{Name: "PATCHY_ISSUE", Value: strconv.Itoa(spec.Issue)},
 		corev1.EnvVar{Name: "PATCHY_PHASE", Value: spec.Phase})
+	if spec.Finding != "" {
+		env = append(env,
+			corev1.EnvVar{Name: "PATCHY_FINDING", Value: spec.Finding},
+			// The remote base SHA stamps the changeset (the local base is a
+			// synthetic commit in artifact mode).
+			corev1.EnvVar{Name: "PATCHY_BASE_SHA", Value: spec.BaseSHA})
+	}
 
 	keys := make([]string, 0, len(c.cfg.Env))
 	for k := range c.cfg.Env {
@@ -370,13 +453,19 @@ func containerSecurity() *corev1.SecurityContext {
 }
 
 func jobLabels(spec Spec) map[string]string {
-	return map[string]string{
+	lbls := map[string]string{
 		labelApp:       appName,
 		labelManagedBy: managedBy,
 		labelIssue:     strconv.Itoa(spec.Issue),
 		labelAttempt:   strconv.Itoa(spec.Attempt),
 		labelRepo:      sanitizeLabelValue(spec.Repo),
 	}
+	if spec.Kind != "" {
+		lbls[v1alpha1.LabelRunKind] = spec.Kind
+		lbls[v1alpha1.LabelOwner] = sanitizeLabelValue(spec.Owner)
+		lbls[v1alpha1.LabelFinding] = sanitizeLabelValue(spec.Finding)
+	}
+	return lbls
 }
 
 // sanitizeLabelValue coerces owner/name into a legal label value: lowercase

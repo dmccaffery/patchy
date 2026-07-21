@@ -17,12 +17,14 @@ import (
 // Phase selects which stages run.
 type Phase string
 
-// PhaseFull runs classification and (on a qualifying verdict) remediation;
-// PhaseRemediate runs remediation only, from a controller-provided
-// classification — the /approve re-run.
+// PhaseFull runs classification and (on a qualifying verdict) remediation —
+// the legacy combined pipeline. The split pipeline uses PhaseInvestigate
+// (analysis only) and PhaseRemediate (remediation from a controller-provided
+// analysis file).
 const (
-	PhaseFull      Phase = "classify+remediate"
-	PhaseRemediate Phase = "remediate"
+	PhaseFull        Phase = "classify+remediate"
+	PhaseInvestigate Phase = "investigate"
+	PhaseRemediate   Phase = "remediate"
 )
 
 // Config is the runner's configuration; in the pod every field arrives as
@@ -31,7 +33,14 @@ type Config struct {
 	Workspace string
 	Repo      string
 	Issue     int
-	Phase     Phase
+	// Finding names the owning Finding resource (split pipeline; events echo
+	// it so the controller can key them without issue numbers).
+	Finding string
+	// BaseSHA is the remote commit the workspace tree corresponds to. In the
+	// artifact flow the local git base is a synthetic commit, so the
+	// changeset's push base must come from here instead.
+	BaseSHA string
+	Phase   Phase
 
 	ClassifyHarness  string
 	RemediateHarness string
@@ -69,6 +78,14 @@ func (c Config) inputClassification() string {
 	return filepath.Join(c.Workspace, "input", "classification.md")
 }
 
+func (c Config) inputInvestigation() string {
+	return filepath.Join(c.Workspace, "input", "investigation.md")
+}
+
+func (c Config) investigationPath() string {
+	return filepath.Join(c.Workspace, "reports", "investigation.md")
+}
+
 func (c Config) classificationPath() string {
 	return filepath.Join(c.Workspace, "reports", "classification.md")
 }
@@ -77,7 +94,16 @@ func (c Config) remediationPath() string {
 	return filepath.Join(c.Workspace, "reports", "remediation.md")
 }
 func (c Config) commitScript() string { return filepath.Join(c.Workspace, "commit.sh") }
-func (c Config) branch() string       { return fmt.Sprintf("patchy/issue-%d", c.Issue) }
+
+// branch is the remediation branch: keyed by finding name in the split
+// pipeline (pull-request webhooks resolve the Finding from the head ref),
+// by issue number in the legacy one.
+func (c Config) branch() string {
+	if c.Finding != "" {
+		return "patchy/" + c.Finding
+	}
+	return fmt.Sprintf("patchy/issue-%d", c.Issue)
+}
 
 // FromEnv builds the pod configuration from PATCHY_* environment variables,
 // applying defaults.
@@ -92,6 +118,8 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		Workspace:        get("WORKSPACE", "/workspace"),
 		Repo:             get("REPO", ""),
+		Finding:          get("FINDING", ""),
+		BaseSHA:          get("BASE_SHA", ""),
 		Phase:            Phase(get("PHASE", string(PhaseFull))),
 		ClassifyHarness:  get("CLASSIFY_HARNESS", "claude"),
 		RemediateHarness: get("REMEDIATE_HARNESS", "claude"),
@@ -145,11 +173,14 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	if cfg.Repo == "" {
 		errs = append(errs, "PATCHY_REPO is required")
 	}
-	if cfg.Issue <= 0 {
-		errs = append(errs, "PATCHY_ISSUE is required")
+	if cfg.Issue <= 0 && cfg.Finding == "" {
+		errs = append(errs, "one of PATCHY_ISSUE or PATCHY_FINDING is required")
 	}
-	if cfg.Phase != PhaseFull && cfg.Phase != PhaseRemediate {
-		errs = append(errs, fmt.Sprintf("PATCHY_PHASE=%q is not %q or %q", cfg.Phase, PhaseFull, PhaseRemediate))
+	switch cfg.Phase {
+	case PhaseFull, PhaseInvestigate, PhaseRemediate:
+	default:
+		errs = append(errs, fmt.Sprintf("PATCHY_PHASE=%q is not %q, %q, or %q",
+			cfg.Phase, PhaseFull, PhaseInvestigate, PhaseRemediate))
 	}
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("agentrun config: %s", strings.Join(errs, "; "))
