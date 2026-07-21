@@ -1,0 +1,283 @@
+// Copyright 2026 Bitwise Media Group Ltd.
+// SPDX-License-Identifier: MIT
+
+package web
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	v1alpha1 "github.com/bitwise-media-group/patchy/api/v1alpha1"
+	"github.com/bitwise-media-group/patchy/internal/kube"
+	"github.com/bitwise-media-group/patchy/internal/web/authz"
+)
+
+// actionFinding is a minimal finding in the given phase.
+func actionFinding(phase v1alpha1.Phase, mutate ...func(*v1alpha1.Finding)) *v1alpha1.Finding {
+	f := &v1alpha1.Finding{
+		ObjectMeta: metav1.ObjectMeta{Name: "fnd-1", Namespace: "patchy"},
+		Spec: v1alpha1.FindingSpec{
+			IntegrationRef: v1alpha1.LocalObjectReference{Name: "gh"},
+			Source:         "github-code-scanning",
+			Advisories:     []string{"CVE-2026-0001"},
+		},
+		Status: v1alpha1.FindingStatus{Phase: phase},
+	}
+	for _, m := range mutate {
+		m(f)
+	}
+	return f
+}
+
+// postAction drives one action through the full handler stack.
+func postAction(t *testing.T, s *Server, name, verb string) (*http.Response, string) {
+	t.Helper()
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	res, err := http.Post(ts.URL+"/api/findings/"+name+"/actions/"+verb, "", nil)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	body, _ := io.ReadAll(res.Body)
+	return res, strings.TrimSpace(string(body))
+}
+
+func getFinding(t *testing.T, c client.Client, name string) *v1alpha1.Finding {
+	t.Helper()
+	var f v1alpha1.Finding
+	if err := c.Get(t.Context(), types.NamespacedName{Namespace: "patchy", Name: name}, &f); err != nil {
+		t.Fatalf("get %s: %v", name, err)
+	}
+	return &f
+}
+
+func TestHandleAction(t *testing.T) {
+	staleAt := metav1.NewTime(testClock.Add(-2 * time.Hour))
+	doneAt := metav1.NewTime(testClock.Add(-time.Hour))
+	freshAt := metav1.NewTime(testClock.Add(-30 * time.Minute))
+
+	cases := []struct {
+		name       string
+		finding    *v1alpha1.Finding
+		verb       string
+		wantStatus int
+		wantBody   string
+		check      func(t *testing.T, f *v1alpha1.Finding)
+	}{
+		{
+			name:       "approve awaiting approval",
+			finding:    actionFinding(v1alpha1.PhaseAwaitingApproval),
+			verb:       "approve",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Approval == nil || f.Spec.Approval.By != "op@acme.test" {
+					t.Errorf("approval = %+v", f.Spec.Approval)
+				}
+				// The phase edge belongs to remediation-controller.
+				if f.Status.Phase != v1alpha1.PhaseAwaitingApproval {
+					t.Errorf("phase moved to %q", f.Status.Phase)
+				}
+			},
+		},
+		{
+			name: "approve replaces stale HandedOff approval",
+			finding: actionFinding(v1alpha1.PhaseHandedOff, func(f *v1alpha1.Finding) {
+				f.Spec.Approval = &v1alpha1.Approval{By: "old", At: staleAt}
+				f.Status.CompletedAt = &doneAt
+			}),
+			verb:       "approve",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Approval.By != "op@acme.test" {
+					t.Errorf("approval.by = %q, want replacement", f.Spec.Approval.By)
+				}
+			},
+		},
+		{
+			name: "approve keeps fresh approval",
+			finding: actionFinding(v1alpha1.PhaseHandedOff, func(f *v1alpha1.Finding) {
+				f.Spec.Approval = &v1alpha1.Approval{By: "old", At: freshAt}
+				f.Status.CompletedAt = &doneAt
+			}),
+			verb:       "approve",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Approval.By != "old" {
+					t.Errorf("approval.by = %q, want first approval kept", f.Spec.Approval.By)
+				}
+			},
+		},
+		{
+			name:       "approve outside approval phases",
+			finding:    actionFinding(v1alpha1.PhaseInvestigating),
+			verb:       "approve",
+			wantStatus: http.StatusForbidden,
+			wantBody:   "Action approve is not available for finding fnd-1 (phase Investigating).",
+		},
+		{
+			name:       "suspend non-terminal",
+			finding:    actionFinding(v1alpha1.PhaseQueued),
+			verb:       "suspend",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if !f.Spec.Suspend {
+					t.Error("suspend not set")
+				}
+			},
+		},
+		{
+			name:       "suspend terminal",
+			finding:    actionFinding(v1alpha1.PhaseRemediated),
+			verb:       "suspend",
+			wantStatus: http.StatusForbidden,
+			wantBody:   "Action suspend is not available for finding fnd-1 (phase Remediated).",
+		},
+		{
+			name: "suspend already suspended is a no-op",
+			finding: actionFinding(v1alpha1.PhaseQueued, func(f *v1alpha1.Finding) {
+				f.Spec.Suspend = true
+			}),
+			verb:       "suspend",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "resume suspended",
+			finding: actionFinding(v1alpha1.PhaseQueued, func(f *v1alpha1.Finding) {
+				f.Spec.Suspend = true
+			}),
+			verb:       "resume",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Suspend {
+					t.Error("suspend not cleared")
+				}
+			},
+		},
+		{
+			name:       "resume not suspended is a no-op",
+			finding:    actionFinding(v1alpha1.PhaseQueued),
+			verb:       "resume",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "unknown verb",
+			finding:    actionFinding(v1alpha1.PhaseQueued),
+			verb:       "escalate",
+			wantStatus: http.StatusNotFound,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testServer(t, tc.finding)
+			s.auth, s.granter = stubAuth{id: operator}, stubGranter{grants: allGrants()}
+			res, body := postAction(t, s, tc.finding.Name, tc.verb)
+			if res.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d (%s), want %d", res.StatusCode, body, tc.wantStatus)
+			}
+			if tc.wantBody != "" && body != tc.wantBody {
+				t.Errorf("body = %q, want %q", body, tc.wantBody)
+			}
+			if tc.wantStatus == http.StatusOK {
+				var v map[string]any
+				if err := json.Unmarshal([]byte(body), &v); err != nil {
+					t.Errorf("success body %q is not JSON: %v", body, err)
+				}
+			}
+			if tc.check != nil {
+				tc.check(t, getFinding(t, mustClient(s), tc.finding.Name))
+			}
+		})
+	}
+}
+
+func TestHandleActionAuth(t *testing.T) {
+	cases := []struct {
+		name       string
+		auth       stubAuth
+		granter    stubGranter
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "no session",
+			auth:       stubAuth{},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "verb not granted",
+			auth:       stubAuth{id: operator},
+			granter:    stubGranter{grants: authz.Grants{View: true}},
+			wantStatus: http.StatusForbidden,
+			wantBody:   `Permission denied. User "Op" may not suspend findings in namespace "patchy".`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testServer(t, actionFinding(v1alpha1.PhaseQueued))
+			s.auth, s.granter = tc.auth, tc.granter
+			res, body := postAction(t, s, "fnd-1", "suspend")
+			if res.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", res.StatusCode, tc.wantStatus)
+			}
+			if tc.wantBody != "" && body != tc.wantBody {
+				t.Errorf("body = %q, want %q", body, tc.wantBody)
+			}
+		})
+	}
+}
+
+func TestHandleActionMissingFinding(t *testing.T) {
+	s := testServer(t)
+	s.auth, s.granter = stubAuth{id: operator}, stubGranter{grants: allGrants()}
+	res, _ := postAction(t, s, "ghost", "suspend")
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", res.StatusCode)
+	}
+}
+
+func TestHandleActionRetriesConflict(t *testing.T) {
+	conflicts := 1
+	c := fake.NewClientBuilder().
+		WithScheme(kube.Scheme()).
+		WithObjects(actionFinding(v1alpha1.PhaseQueued)).
+		WithStatusSubresource(&v1alpha1.Finding{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Update: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				if conflicts > 0 {
+					conflicts--
+					return apierrors.NewConflict(
+						schema.GroupResource{Group: "patchy.bitwisemedia.uk", Resource: "findings"},
+						obj.GetName(), nil)
+				}
+				return cl.Update(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	s := NewServer(c, "patchy", stubAuth{id: operator}, stubGranter{grants: allGrants()}, nil)
+	s.now = func() time.Time { return testClock }
+	res, body := postAction(t, s, "fnd-1", "suspend")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d (%s), want 200 after retry", res.StatusCode, body)
+	}
+	if !getFinding(t, c, "fnd-1").Spec.Suspend {
+		t.Error("suspend not applied after conflict retry")
+	}
+}
+
+// mustClient unwraps the server's client for post-assertion reads.
+func mustClient(s *Server) client.Client { return s.client }
