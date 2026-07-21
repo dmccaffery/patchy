@@ -78,6 +78,15 @@ description = "build all patchy binaries into bin/"
 dir = "{{cwd}}"
 run = [{ task = "ui" }, "./hack/build.sh"]
 
+# Canned status-page data for dev: apply the demo Findings/FindingRollups
+# and seed their statuses (a subresource `kubectl apply -k` cannot write).
+# The data is deliberately inert — every finding suspended, no trackingRef,
+# no completedAt — see the manifest header.
+[status-demo]
+description = "seed canned findings/rollups for the status page (dev cluster)"
+dir = "{{cwd}}"
+run = "./hack/status-demo.sh"
+
 # One-command local dev loop on Colima: cluster up, snapshot images, retag,
 # apply the dev overlay, restart so a re-run redeploys. The interesting parts
 # (traefik enablement, GITHUB_TOKEN secret, the ingress probe) are documented

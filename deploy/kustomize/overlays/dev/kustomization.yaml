@@ -16,6 +16,10 @@ resources:
     - secret-dev.yaml
     - crs-dev.yaml
     - ingress-integration.yaml
+    # Canned status-page data (suspended findings + rollup statistics).
+    # `kubectl apply -k` creates the objects; run `mise run status-demo` to
+    # seed their statuses (phases, rollup buckets) — see the file header.
+    - findings-demo.yaml
 
 # No Cilium component: kind runs kindnet, which honours NetworkPolicy only if
 # you swap the CNI. Base NetworkPolicies are applied and simply have no effect
