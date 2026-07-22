@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.2](https://github.com/bitwise-media-group/patchy/compare/v0.5.1...v0.5.2) (2026-07-22)
+
+
+### Features
+
+* add retry and expedite finding actions ([852808e](https://github.com/bitwise-media-group/patchy/commit/852808e2321656fd0b3e1bb04f2b3c92c1378601))
+
+
+### Bug Fixes
+
+* **report:** tolerate unquoted colons in investigation summaries ([f469213](https://github.com/bitwise-media-group/patchy/commit/f46921392118f09149af281ecbe47d2a8fae8c1a))
+
 ## [0.5.1](https://github.com/bitwise-media-group/patchy/compare/v0.5.0...v0.5.1) (2026-07-22)
 
 
