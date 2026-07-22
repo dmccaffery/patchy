@@ -186,10 +186,10 @@ func (a *Agent) remediate(ctx context.Context, params remediationParams) *envelo
 		ev.Detail = err.Error()
 		return ev
 	}
-	// Body only: the frontmatter's values are lifted onto the envelope
-	// fields below, and the report is rendered to humans (status page, PR
-	// body) where the raw YAML is noise.
-	ev.ReportMarkdown = rem.Body
+	// Raw, frontmatter included: the report is the machine contract as well
+	// as the human artifact. Presentation seams strip the fence before
+	// rendering (report.StripFrontmatter).
+	ev.ReportMarkdown = string(raw)
 	ev.Confidence = *rem.Confidence
 	ev.Outcome = envelope.OutcomeOK
 
@@ -291,8 +291,10 @@ func (a *Agent) investigate(ctx context.Context) *envelope.Investigation {
 	}
 
 	ev.Outcome = envelope.OutcomeOK
-	// Body only — see the remediate stage's note.
-	ev.ReportMarkdown = inv.Body
+	// Raw, frontmatter included: the remediation stage re-parses this exact
+	// text as its investigation.md input (remediationInput), so the fence
+	// must survive the round-trip through Finding status.
+	ev.ReportMarkdown = string(raw)
 	ev.Exploitability = envelope.AnalysisResult{
 		Rating: string(inv.Exploitability.Rating), Summary: inv.Exploitability.Summary,
 	}

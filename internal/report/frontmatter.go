@@ -30,8 +30,10 @@ func splitFrontmatter(data []byte) (block []byte, body string, err error) {
 }
 
 // StripFrontmatter returns the markdown body following a leading ---fenced
-// YAML block, or s unchanged when there is no complete fence. The runner
-// stores body-only reports; this covers report text persisted before it did.
+// YAML block, or s unchanged when there is no complete fence. Stored reports
+// keep their frontmatter (it is the machine contract the remediation stage
+// re-parses); presentation seams — the status page, PR bodies, issue
+// comments — call this before rendering.
 func StripFrontmatter(s string) string {
 	_, body, err := splitFrontmatter([]byte(s))
 	if err != nil {

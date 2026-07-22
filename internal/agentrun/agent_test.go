@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/bitwise-media-group/patchy/internal/envelope"
+	"github.com/bitwise-media-group/patchy/internal/report"
 	"github.com/bitwise-media-group/patchy/internal/runner"
 )
 
@@ -274,6 +275,21 @@ func TestInvestigationEvent(t *testing.T) {
 	}
 	if inv.AwaitApproval {
 		t.Error("AwaitApproval = true without a breaking-change hold")
+	}
+}
+
+// TestInvestigationReportRoundTrips pins the handoff contract: the envelope's
+// report keeps its frontmatter, because the controller feeds this exact text
+// back as the remediation stage's investigation.md, which re-parses it.
+func TestInvestigationReportRoundTrips(t *testing.T) {
+	inv := investigateRun(t).Investigation
+
+	if inv.ReportMarkdown != goodInvestigation {
+		t.Errorf("ReportMarkdown mutated in the envelope:\ngot:\n%s\nwant:\n%s",
+			inv.ReportMarkdown, goodInvestigation)
+	}
+	if _, err := report.ParseInvestigation([]byte(inv.ReportMarkdown)); err != nil {
+		t.Errorf("ReportMarkdown no longer parses as a remediation input: %v", err)
 	}
 }
 

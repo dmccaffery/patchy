@@ -24,6 +24,7 @@ import (
 	v1alpha1 "github.com/bitwise-media-group/patchy/api/v1alpha1"
 	"github.com/bitwise-media-group/patchy/internal/ghclient"
 	"github.com/bitwise-media-group/patchy/internal/labels"
+	"github.com/bitwise-media-group/patchy/internal/report"
 	"github.com/bitwise-media-group/patchy/internal/templates"
 )
 
@@ -297,7 +298,10 @@ func (r *FindingReconciler) projectComments(
 		var child v1alpha1.Investigation
 		key := types.NamespacedName{Namespace: fnd.Namespace, Name: inv.Name}
 		if err := r.Get(ctx, key, &child); err == nil && child.Status.Report != "" {
-			comment := templates.RenderStageReportComment("Investigation", inv.Attempt, child.Status.Report)
+			// Status.Report carries the machine frontmatter; comments are
+			// presentation, so render the markdown body only.
+			comment := templates.RenderStageReportComment("Investigation", inv.Attempt,
+				report.StripFrontmatter(child.Status.Report))
 			if err := tracker.Comment(ctx, repo, number, comment); err != nil {
 				return err
 			}
@@ -311,7 +315,8 @@ func (r *FindingReconciler) projectComments(
 		var child v1alpha1.Remediation
 		key := types.NamespacedName{Namespace: fnd.Namespace, Name: rem.Name}
 		if err := r.Get(ctx, key, &child); err == nil && child.Status.Report != "" {
-			comment := templates.RenderStageReportComment("Remediation", rem.Attempt, child.Status.Report)
+			comment := templates.RenderStageReportComment("Remediation", rem.Attempt,
+				report.StripFrontmatter(child.Status.Report))
 			if err := tracker.Comment(ctx, repo, number, comment); err != nil {
 				return err
 			}

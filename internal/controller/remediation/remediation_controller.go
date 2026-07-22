@@ -23,6 +23,7 @@ import (
 	"github.com/bitwise-media-group/patchy/internal/agentresult"
 	"github.com/bitwise-media-group/patchy/internal/envelope"
 	"github.com/bitwise-media-group/patchy/internal/jobs"
+	"github.com/bitwise-media-group/patchy/internal/report"
 	"github.com/bitwise-media-group/patchy/internal/schedule"
 	"github.com/bitwise-media-group/patchy/internal/templates"
 )
@@ -305,9 +306,12 @@ func (r *RemediationReconciler) succeed(
 	if fnd.Status.Tracking != nil {
 		issueNumber = int(fnd.Status.Tracking.IssueNumber)
 	}
-	body, err := templates.PRBody(issueNumber, result.ReportMarkdown)
+	// The stored report carries its machine frontmatter; the PR body is
+	// presentation, so render the markdown body only.
+	reportBody := report.StripFrontmatter(result.ReportMarkdown)
+	body, err := templates.PRBody(issueNumber, reportBody)
 	if err != nil {
-		body = result.ReportMarkdown
+		body = reportBody
 	}
 	number, url, err := r.Forge.EnsurePR(ctx, rem.Namespace, fnd.Spec.Repository.URL, branch,
 		templates.FindingIssueTitle(&fnd), body)

@@ -371,8 +371,9 @@ func (d *runDetails) addStage(finding string, st *v1alpha1.StageResult) {
 func (d *runDetails) attach(f *v1alpha1.Finding, out *Finding) {
 	if inv := f.Status.Investigation; inv != nil && out.Investigation != nil {
 		if child := d.inv[inv.Name]; child != nil {
-			// Runs recorded before the runner stored body-only reports
-			// carry the raw frontmatter; strip it rather than render YAML.
+			// Status.Report carries the machine frontmatter (the remediation
+			// stage re-parses it); the status page is presentation, so
+			// project the markdown body only.
 			out.Investigation.Report = report.StripFrontmatter(child.Status.Report)
 			if st := child.Status.Stage; st != nil {
 				out.Investigation.Harness = st.Harness
