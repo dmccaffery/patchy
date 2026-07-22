@@ -3,6 +3,7 @@ import { confidencePercent, formatAgo, formatConfidence } from "../format";
 import { hrefForFinding } from "../router";
 import { Icon } from "./icons";
 import { PhasePill, SeverityPill, VerdictPill, Pill } from "./Pills";
+import { PullRequestPill } from "./PullRequest";
 
 function FindingRow({ finding }: { finding: Finding }) {
   const advisory = finding.advisories[0] ?? finding.ruleID ?? finding.name;
@@ -25,7 +26,11 @@ function FindingRow({ finding }: { finding: Finding }) {
         <SeverityPill severity={finding.severity} />
       </div>
       <div class="flex flex-col items-start gap-1">
-        <PhasePill phase={finding.phase} />
+        {finding.phase === "InReview" && finding.pullRequest?.url ? (
+          <PullRequestPill pr={finding.pullRequest} />
+        ) : (
+          <PhasePill phase={finding.phase} />
+        )}
         {finding.suspend ? <Pill tone="amber">suspended</Pill> : null}
         {finding.activeRun ? (
           <span class="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-ink" title={`${finding.activeRun.kind} running`}>

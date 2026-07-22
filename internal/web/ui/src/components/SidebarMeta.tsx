@@ -2,6 +2,7 @@ import type { ComponentChildren } from "preact";
 import type { Finding } from "../types";
 import { DASH, formatDate } from "../format";
 import { Icon } from "./icons";
+import { PullRequestCard } from "./PullRequest";
 
 function Card({ title, children }: { title: string; children: ComponentChildren }) {
   return (
@@ -18,6 +19,12 @@ export function SidebarMeta({ finding }: { finding: Finding }) {
 
   return (
     <aside class="flex flex-col gap-3 pt-5 max-lg:pt-1" aria-label="Finding metadata">
+      {finding.pullRequest ? (
+        <Card title="Pull request">
+          <PullRequestCard pr={finding.pullRequest} />
+        </Card>
+      ) : null}
+
       <Card title="Owners">
         {owners.size > 0 ? (
           <ul class="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px]">
