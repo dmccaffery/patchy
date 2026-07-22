@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/bitwise-media-group/patchy/compare/v0.5.5...v0.5.6) (2026-07-22)
+
+
+### Features
+
+* **integration-controller:** stop the receiver dedup swallowing redeliveries ([cfc7685](https://github.com/bitwise-media-group/patchy/commit/cfc76856a76d59e3cc2755fbf1d0daaefce9d2c1))
+
 ## [0.5.5](https://github.com/bitwise-media-group/patchy/compare/v0.5.4...v0.5.5) (2026-07-22)
 
 
