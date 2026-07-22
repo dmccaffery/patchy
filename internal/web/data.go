@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/bitwise-media-group/patchy/api/v1alpha1"
+	"github.com/bitwise-media-group/patchy/internal/report"
 	"github.com/bitwise-media-group/patchy/internal/stats"
 	"github.com/bitwise-media-group/patchy/internal/version"
 )
@@ -367,7 +368,9 @@ func (d *runDetails) addStage(finding string, st *v1alpha1.StageResult) {
 func (d *runDetails) attach(f *v1alpha1.Finding, out *Finding) {
 	if inv := f.Status.Investigation; inv != nil && out.Investigation != nil {
 		if child := d.inv[inv.Name]; child != nil {
-			out.Investigation.Report = child.Status.Report
+			// Runs recorded before the runner stored body-only reports
+			// carry the raw frontmatter; strip it rather than render YAML.
+			out.Investigation.Report = report.StripFrontmatter(child.Status.Report)
 			if st := child.Status.Stage; st != nil {
 				out.Investigation.Harness = st.Harness
 				out.Investigation.Model = st.Model
@@ -377,7 +380,7 @@ func (d *runDetails) attach(f *v1alpha1.Finding, out *Finding) {
 	}
 	if rem := f.Status.Remediation; rem != nil && out.Remediation != nil {
 		if child := d.rem[rem.Name]; child != nil {
-			out.Remediation.Report = child.Status.Report
+			out.Remediation.Report = report.StripFrontmatter(child.Status.Report)
 			if st := child.Status.Stage; st != nil {
 				out.Remediation.Harness = st.Harness
 				out.Remediation.Model = st.Model

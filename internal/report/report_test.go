@@ -164,6 +164,26 @@ func TestParseInvestigationErrors(t *testing.T) {
 	}
 }
 
+func TestStripFrontmatter(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"fenced report", "---\nconfidence: 0.9\n---\n\n## Analysis\n\nbody", "## Analysis\n\nbody"},
+		{"body only", "## Analysis\n\nbody", "## Analysis\n\nbody"},
+		{"unterminated fence", "---\nconfidence: 0.9\nbody", "---\nconfidence: 0.9\nbody"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := StripFrontmatter(tt.src); got != tt.want {
+				t.Errorf("StripFrontmatter() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 const validRemediation = `---
 success: true
 confidence: 0.9

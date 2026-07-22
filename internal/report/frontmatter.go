@@ -29,6 +29,17 @@ func splitFrontmatter(data []byte) (block []byte, body string, err error) {
 	return block, string(bytes.TrimLeft(body2, "\r\n")), nil
 }
 
+// StripFrontmatter returns the markdown body following a leading ---fenced
+// YAML block, or s unchanged when there is no complete fence. The runner
+// stores body-only reports; this covers report text persisted before it did.
+func StripFrontmatter(s string) string {
+	_, body, err := splitFrontmatter([]byte(s))
+	if err != nil {
+		return s
+	}
+	return body
+}
+
 // decodeStrict unmarshals the frontmatter block into out, rejecting unknown
 // keys — the prompt promised a schema; hold the model to it.
 func decodeStrict(block []byte, out any) error {

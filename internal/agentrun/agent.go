@@ -186,7 +186,10 @@ func (a *Agent) remediate(ctx context.Context, params remediationParams) *envelo
 		ev.Detail = err.Error()
 		return ev
 	}
-	ev.ReportMarkdown = string(raw)
+	// Body only: the frontmatter's values are lifted onto the envelope
+	// fields below, and the report is rendered to humans (status page, PR
+	// body) where the raw YAML is noise.
+	ev.ReportMarkdown = rem.Body
 	ev.Confidence = *rem.Confidence
 	ev.Outcome = envelope.OutcomeOK
 
@@ -288,7 +291,8 @@ func (a *Agent) investigate(ctx context.Context) *envelope.Investigation {
 	}
 
 	ev.Outcome = envelope.OutcomeOK
-	ev.ReportMarkdown = string(raw)
+	// Body only — see the remediate stage's note.
+	ev.ReportMarkdown = inv.Body
 	ev.Exploitability = envelope.AnalysisResult{
 		Rating: string(inv.Exploitability.Rating), Summary: inv.Exploitability.Summary,
 	}
