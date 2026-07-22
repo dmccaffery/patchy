@@ -201,6 +201,22 @@ rules:
     - apiGroups: [patchy.bitwisemedia.uk]
       resources: [findings]
       verbs: [approve, retry, expedite, suspend, resume]
+---
+# Operator + the user menu's demo tooling: replay the webhook delivery log,
+# reset (delete) all pipeline state. Grant sparingly.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: {{ include "patchy.fullname" . }}-findings-admin
+    labels:
+        {{- include "patchy.labels" (dict "root" . "name" $name) | nindent 8 }}
+rules:
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings, findingrollups]
+      verbs: [get, list]
+    - apiGroups: [patchy.bitwisemedia.uk]
+      resources: [findings]
+      verbs: [approve, retry, expedite, suspend, resume, replay, reset]
 {{- end }}
 ---
 apiVersion: apps/v1

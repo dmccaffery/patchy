@@ -91,7 +91,7 @@ rules:
 ```
 
 Bind roles like this to the values of the OIDC `username`/`groups` claims (RoleBindings in the patchy namespace; grants
-apply uniformly across its findings). Ready-made viewer / approver / operator tiers ship in
+apply uniformly across its findings). Ready-made viewer / approver / operator / admin tiers ship in
 `deploy/kustomize/base/rbac.users.example.yaml`, and the helm chart renders them with
 `statusServer.rbac.userRoles=true`.
 
