@@ -31,13 +31,13 @@ Not on camera · run through before the room
 
 </div>
 
-| Ready? | Item | Why |
-| :----: | ---- | --- |
-| ☐ | Demo GitHub repo with CodeQL + intentional findings (FP, auto-fixable real, optional “needs human”) | Covers all three recommendations |
-| ☐ | GitHub App / Integration + Forge already live | Webhooks land without live setup |
-| ☐ | Patchy status page open (signed in) | Second surface alongside GitHub |
-| ☐ | Short accumulation + min-age **or** **Expedite** on new findings | Avoid a 1h+ wait mid-demo |
-| ☐ | Optional safety net: one finding at `Investigating`, one `Dismissed`, one with open PR | If the live path is slow |
+| Ready? | Item                                                                                                | Why                              |
+| :----: | --------------------------------------------------------------------------------------------------- | -------------------------------- |
+|   ☐    | Demo GitHub repo with CodeQL + intentional findings (FP, auto-fixable real, optional “needs human”) | Covers all three recommendations |
+|   ☐    | GitHub App / Integration + Forge already live                                                       | Webhooks land without live setup |
+|   ☐    | Patchy status page open (signed in)                                                                 | Second surface alongside GitHub  |
+|   ☐    | Short accumulation + min-age **or** **Expedite** on new findings                                    | Avoid a 1h+ wait mid-demo        |
+|   ☐    | Optional safety net: one finding at `Investigating`, one `Dismissed`, one with open PR              | If the live path is slow         |
 
 !!! abstract "One-line product framing · use once"
 
@@ -53,8 +53,7 @@ Not on camera · run through before the room
 
 <div class="pt-demo-act-meta" markdown>
 
-<span class="pt-demo-clock">0:00–1:30</span>
-<span class="pt-demo-dur">~1.5 min</span>
+<span class="pt-demo-clock">0:00–1:30</span> <span class="pt-demo-dur">~1.5 min</span>
 
 </div>
 
@@ -99,8 +98,7 @@ Not on camera · run through before the room
 
 <div class="pt-demo-act-meta" markdown>
 
-<span class="pt-demo-clock">1:30–4:00</span>
-<span class="pt-demo-dur">~2.5 min</span>
+<span class="pt-demo-clock">1:30–4:00</span> <span class="pt-demo-dur">~2.5 min</span>
 
 </div>
 
@@ -177,8 +175,7 @@ Not on camera · run through before the room
 
 <div class="pt-demo-act-meta" markdown>
 
-<span class="pt-demo-clock">4:00–5:30</span>
-<span class="pt-demo-dur">~1.5 min</span>
+<span class="pt-demo-clock">4:00–5:30</span> <span class="pt-demo-dur">~1.5 min</span>
 
 </div>
 
@@ -210,8 +207,7 @@ Not on camera · run through before the room
 
 <div class="pt-demo-act-meta" markdown>
 
-<span class="pt-demo-clock">5:30–8:30</span>
-<span class="pt-demo-dur">~3 min</span>
+<span class="pt-demo-clock">5:30–8:30</span> <span class="pt-demo-dur">~3 min</span>
 
 </div>
 
@@ -240,11 +236,11 @@ Not on camera · run through before the room
     The agent does not only say “true / false.” It rates three dimensions, each
     `none | low | medium | high | critical`, with a short justification:
 
-| Dimension | Question the agent answers |
-| --------- | -------------------------- |
-| **Exploitability** | Can this actually be exercised _in this codebase_? Reachable entry points — or why none exist. |
-| **Likelihood** | How probable is exploitation _in this deployment_? Exposure, preconditions, known exploit paths. |
-| **Impact** | What’s the blast radius if it fires? Data, privilege, lateral movement, availability. |
+| Dimension          | Question the agent answers                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| **Exploitability** | Can this actually be exercised _in this codebase_? Reachable entry points — or why none exist.   |
+| **Likelihood**     | How probable is exploitation _in this deployment_? Exposure, preconditions, known exploit paths. |
+| **Impact**         | What’s the blast radius if it fires? Data, privilege, lateral movement, availability.            |
 
     These ratings feed a **0–100 scheduling priority** when work queues for remediation:
 
@@ -275,11 +271,11 @@ Not on camera · run through before the room
 
 ### The three recommendations
 
-| Recommendation | Meaning | Terminal / next phase |
-| -------------- | ------- | --------------------- |
-| **`ignore`** | False positive (not exploitable, bad dataflow assumption, already mitigated) | **Dismissed** — source alerts dismissed where applicable, issue closed |
-| **`remediate`** | Real issue; automated fix likely to succeed | **Queued** / **AwaitingApproval** / then agent fix |
-| **`manual`** | Real issue; needs domain judgment or is too risky to automate | **HandedOff** to owners (revivable via `/approve`) |
+| Recommendation  | Meaning                                                                      | Terminal / next phase                                                  |
+| --------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **`ignore`**    | False positive (not exploitable, bad dataflow assumption, already mitigated) | **Dismissed** — source alerts dismissed where applicable, issue closed |
+| **`remediate`** | Real issue; automated fix likely to succeed                                  | **Queued** / **AwaitingApproval** / then agent fix                     |
+| **`manual`**    | Real issue; needs domain judgment or is too risky to automate                | **HandedOff** to owners (revivable via `/approve`)                     |
 
 !!! tip "Transition"
 
@@ -291,8 +287,7 @@ Not on camera · run through before the room
 
 <div class="pt-demo-act-meta" markdown>
 
-<span class="pt-demo-clock">8:30–10:30</span>
-<span class="pt-demo-dur">~2 min</span>
+<span class="pt-demo-clock">8:30–10:30</span> <span class="pt-demo-dur">~2 min</span>
 
 </div>
 
@@ -310,10 +305,10 @@ Not on camera · run through before the room
 
     **This is the economic early exit.** Investigation is deliberately cheaper than remediation:
 
-| Stage | Default ceilings (order of magnitude) |
-| ----- | ------------------------------------- |
-| Investigate | ~**25** turns · **~150k** token budget · ~15m timeout |
-| Remediate | up to **80** turns · **~400k** token budget · ~45m timeout |
+| Stage       | Default ceilings (order of magnitude)                      |
+| ----------- | ---------------------------------------------------------- |
+| Investigate | ~**25** turns · **~150k** token budget · ~15m timeout      |
+| Remediate   | up to **80** turns · **~400k** token budget · ~45m timeout |
 
     Remediation also _requests_ its own model / turns / budget in the investigation report; those are **clamped** to
     operator ceilings and a model allowlist. A false positive never opens that second stage.
@@ -338,8 +333,7 @@ Not on camera · run through before the room
 
 <div class="pt-demo-act-meta" markdown>
 
-<span class="pt-demo-clock">10:30–13:00</span>
-<span class="pt-demo-dur">~2.5 min</span>
+<span class="pt-demo-clock">10:30–13:00</span> <span class="pt-demo-dur">~2.5 min</span>
 
 </div>
 
@@ -380,8 +374,7 @@ Not on camera · run through before the room
 
 <div class="pt-demo-act-meta" markdown>
 
-<span class="pt-demo-clock">13:00–14:30</span>
-<span class="pt-demo-dur">~1.5 min</span>
+<span class="pt-demo-clock">13:00–14:30</span> <span class="pt-demo-dur">~1.5 min</span>
 
 </div>
 
@@ -419,15 +412,15 @@ Presenter cheat sheet · glance while talking
 
 </div>
 
-| Clock | Act | Key visual | Callout |
-| ----: | --- | ---------- | ------- |
-| 0:00–1:30 | Problem + **multi-source framing** | Status board | GHAS first; plugin seam |
-| 1:30–4:00 | Push → CodeQL → dual surface | Actions + Security + status | “This path today” |
-| 4:00–5:30 | Context enhancement | `Opened → Enhanced` | Source-agnostic stage |
-| 5:30–8:30 | Investigation, 3 ratings, confidence | Investigating | Same report for any source |
-| 8:30–10:30 | False positive early exit + cost | Dismissed + Rollups | Economic early exit |
-| 10:30–13:00 | Remediation opens PRs | PR `patchy/<finding>` | Verify-don’t-trust |
-| 13:00–14:30 | Manual + wrap | HandedOff / summary | Restate extensibility |
+|       Clock | Act                                  | Key visual                  | Callout                    |
+| ----------: | ------------------------------------ | --------------------------- | -------------------------- |
+|   0:00–1:30 | Problem + **multi-source framing**   | Status board                | GHAS first; plugin seam    |
+|   1:30–4:00 | Push → CodeQL → dual surface         | Actions + Security + status | “This path today”          |
+|   4:00–5:30 | Context enhancement                  | `Opened → Enhanced`         | Source-agnostic stage      |
+|   5:30–8:30 | Investigation, 3 ratings, confidence | Investigating               | Same report for any source |
+|  8:30–10:30 | False positive early exit + cost     | Dismissed + Rollups         | Economic early exit        |
+| 10:30–13:00 | Remediation opens PRs                | PR `patchy/<finding>`       | Verify-don’t-trust         |
+| 13:00–14:30 | Manual + wrap                        | HandedOff / summary         | Restate extensibility      |
 
 <div class="pt-demo-flex" markdown>
 
