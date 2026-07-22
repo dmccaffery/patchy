@@ -1,6 +1,6 @@
 import type { Dataset } from "../types";
 import type { DataMode } from "../api";
-import { signOut } from "../auth";
+import { readProvider, signOut } from "../auth";
 import { PERSONAS, type Persona } from "../mock/personas";
 import { hrefForList, hrefForRollups, type Route } from "../router";
 import { PatchMark } from "./PatchMark";
@@ -84,12 +84,20 @@ export function TopBar({
         </div>
         <div class="ml-auto flex items-center gap-3">
           {mode === "demo" ? <PersonaSwitcher persona={persona} onChange={onPersonaChange} /> : null}
-          {dataset?.user?.loggedIn ? (
+          {/* The provider cookie keeps sign-out reachable when the dataset
+              carries no user (e.g. the 403 fallback to public rollups). */}
+          {dataset?.user?.loggedIn || (mode === "live" && readProvider()?.authenticated) ? (
             <div class="flex items-center gap-2 font-mono text-[10.5px] text-muted">
-              <span class="max-sm:hidden" title="Signed in">
-                {dataset.user.name}
-              </span>
-              <button type="button" class="ps-action" onClick={() => void signOut()}>
+              {dataset?.user?.loggedIn ? (
+                <span class="max-sm:hidden" title="Signed in">
+                  {dataset.user.name}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                class="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-line-2 bg-surface px-2.5 py-1.5 font-mono text-[11.5px] text-fg transition-colors hover:border-turf"
+                onClick={() => void signOut()}
+              >
                 Sign out
               </button>
             </div>

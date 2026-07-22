@@ -9,7 +9,7 @@ import {
   postAction,
   subscribe,
 } from "./api";
-import { consumeLogoutMarker, readAuthError, readProvider, signInURL } from "./auth";
+import { consumeLogoutMarker, readAuthError, readProvider, signInURL, signOut } from "./auth";
 import type { ActionVerb, Dataset, Phase } from "./types";
 import { emptySelection, filterFindings, repoOptions, sortFindings, type Selection } from "./filters";
 import { useRoute } from "./router";
@@ -150,7 +150,17 @@ export function App() {
   // it says so — no dead buttons.
   const authPanel = () => {
     if (findingsBlocked !== "unauthenticated") {
-      return panel("Permission denied", findingsBlocked ?? "");
+      // Signed in but not authorized: offer sign-out so the user can switch
+      // to an account that is.
+      return panel(
+        "Permission denied",
+        findingsBlocked ?? "",
+        readProvider()?.authenticated ? (
+          <button type="button" class="ps-action" onClick={() => void signOut()}>
+            Sign out
+          </button>
+        ) : undefined,
+      );
     }
     const provider = readProvider();
     if (!provider) {
