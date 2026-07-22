@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/bitwise-media-group/patchy/compare/v0.4.0...v0.5.0) (2026-07-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **helm:** the patchy chart no longer accepts integrations/forges values; install the patchy-config chart into the same namespace after patchy, or apply the CRs directly with kubectl.
+
+### Features
+
+* **helm:** split the Integration/Forge CRs into a patchy-config chart ([e8949d6](https://github.com/bitwise-media-group/patchy/commit/e8949d6472ae921466dc0e2dcf620cab27b07273))
+
 ## [0.4.0](https://github.com/bitwise-media-group/patchy/compare/v0.3.3...v0.4.0) (2026-07-22)
 
 
