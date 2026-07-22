@@ -79,7 +79,17 @@ func ParseInvestigation(data []byte) (*Investigation, error) {
 	}
 	var inv Investigation
 	if err := decodeStrict(block, &inv); err != nil {
-		return nil, err
+		// The summaries are the frontmatter's only free text; an unquoted
+		// colon there is the common model slip. Repair and retry once,
+		// surfacing the original error if the repair doesn't parse either.
+		repaired, changed := repairSummaries(block)
+		if !changed {
+			return nil, err
+		}
+		inv = Investigation{}
+		if rerr := decodeStrict(repaired, &inv); rerr != nil {
+			return nil, err
+		}
 	}
 	inv.Body = body
 	if err := inv.validate(); err != nil {

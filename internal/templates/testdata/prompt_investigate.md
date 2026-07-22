@@ -48,13 +48,13 @@ no extra fields; the three remediation fields only when recommending remediate):
 ---
 exploitability:
   rating: none | low | medium | high | critical
-  summary: <one or two sentences: reachable entry points, or why none exist>
+  summary: "<one or two sentences: reachable entry points, or why none exist>"
 likelihood:
   rating: none | low | medium | high | critical
-  summary: <one or two sentences: exposure, preconditions, public exploit paths>
+  summary: "<one or two sentences: exposure, preconditions, public exploit paths>"
 impact:
   rating: none | low | medium | high | critical
-  summary: <one or two sentences: what an attacker gains>
+  summary: "<one or two sentences: what an attacker gains>"
 recommendation: ignore | remediate | manual
 priority: low | medium | high | critical
 severity: low | medium | high | critical
@@ -65,6 +65,9 @@ max_turns: <integer, at most 80>         # remediate only: agent turns before gi
 token_budget: <integer, at most 400000>   # remediate only: output-token budget before giving up
 ---
 ```
+
+Each `summary` value must be a double-quoted YAML string on a single line (escape embedded double quotes as
+`\"`) — unquoted prose containing a colon is invalid YAML and fails the entire run.
 
 After the frontmatter, write your analysis in markdown: what the finding is, the full reasoning behind each rating,
 the evidence for your recommendation, the remediation approach you would take (and the better breaking alternative,

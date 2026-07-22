@@ -87,6 +87,54 @@ False positive: the sink is constant.
 	}
 }
 
+func TestParseInvestigationRepairsUnquotedColonSummary(t *testing.T) {
+	// Models write summaries as plain prose; "CWE-614: ..." is invalid as a
+	// plain YAML scalar. The parser must quote-and-retry rather than fail
+	// the whole run.
+	src := strings.Replace(validInvestigation,
+		"summary: reachable from the request path",
+		"summary: CWE-614: the session cookie is set without the Secure attribute", 1)
+	inv, err := ParseInvestigation([]byte(src))
+	if err != nil {
+		t.Fatalf("ParseInvestigation() error = %v", err)
+	}
+	if want := "CWE-614: the session cookie is set without the Secure attribute"; inv.Exploitability.Summary != want {
+		t.Errorf("Exploitability.Summary = %q, want %q", inv.Exploitability.Summary, want)
+	}
+	// The untouched siblings survive the repair pass unchanged.
+	if inv.Likelihood.Summary != "requires an authenticated caller" {
+		t.Errorf("Likelihood.Summary = %q", inv.Likelihood.Summary)
+	}
+	if inv.Recommendation != RecommendRemediate || *inv.Confidence != 0.85 {
+		t.Errorf("parsed = %+v", inv)
+	}
+}
+
+func TestParseInvestigationRepairEscapesQuotes(t *testing.T) {
+	src := strings.Replace(validInvestigation,
+		"summary: requires an authenticated caller",
+		`summary: attacker needs the "admin: true" claim`, 1)
+	inv, err := ParseInvestigation([]byte(src))
+	if err != nil {
+		t.Fatalf("ParseInvestigation() error = %v", err)
+	}
+	if want := `attacker needs the "admin: true" claim`; inv.Likelihood.Summary != want {
+		t.Errorf("Likelihood.Summary = %q, want %q", inv.Likelihood.Summary, want)
+	}
+}
+
+func TestParseInvestigationRepairDoesNotMaskOtherErrors(t *testing.T) {
+	// A broken summary plus a genuinely bad frontmatter: the repair retry
+	// must not swallow the failure, and the original error is reported.
+	src := strings.Replace(validInvestigation,
+		"summary: full table read",
+		"summary: impact: full table read", 1)
+	src = strings.Replace(src, "model:", "mdoel:", 1)
+	if _, err := ParseInvestigation([]byte(src)); err == nil {
+		t.Error("ParseInvestigation() error = nil, want error")
+	}
+}
+
 func TestParseInvestigationErrors(t *testing.T) {
 	replace := func(old, new string) string { return strings.Replace(validInvestigation, old, new, 1) }
 	tests := []struct {
