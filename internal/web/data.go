@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/bitwise-media-group/patchy/api/v1alpha1"
+	"github.com/bitwise-media-group/patchy/internal/stats"
 	"github.com/bitwise-media-group/patchy/internal/version"
 )
 
@@ -49,27 +50,30 @@ type Finding struct {
 	Severity    string      `json:"severity,omitempty"`
 	Alerts      []Alert     `json:"alerts,omitempty"`
 	// OverflowAlerts counts alerts dropped past the accumulation cap.
-	OverflowAlerts    int32          `json:"overflowAlerts,omitempty"`
-	Related           []Related      `json:"related,omitempty"`
-	Suspend           bool           `json:"suspend,omitempty"`
-	Approval          *Approval      `json:"approval,omitempty"`
-	Retry             *ActionRequest `json:"retry,omitempty"`
-	Expedite          *ActionRequest `json:"expedite,omitempty"`
-	Phase             string         `json:"phase,omitempty"`
-	PhaseTimes        []PhaseTime    `json:"phaseTimes,omitempty"`
-	FirstObservedAt   string         `json:"firstObservedAt,omitempty"`
-	AccumulateUntil   string         `json:"accumulateUntil,omitempty"`
-	Tracking          *Tracking      `json:"tracking,omitempty"`
-	Owners            []string       `json:"owners,omitempty"`
-	Enrichments       []Enrichment   `json:"enrichments,omitempty"`
-	Priority          string         `json:"priority,omitempty"`
-	Investigation     *Investigation `json:"investigation,omitempty"`
-	Remediation       *Remediation   `json:"remediation,omitempty"`
-	PullRequest       *PullRequest   `json:"pullRequest,omitempty"`
-	Attempts          *Attempts      `json:"attempts,omitempty"`
-	ActiveRun         *ActiveRun     `json:"activeRun,omitempty"`
-	LastFailureReason string         `json:"lastFailureReason,omitempty"`
-	CompletedAt       string         `json:"completedAt,omitempty"`
+	OverflowAlerts  int32          `json:"overflowAlerts,omitempty"`
+	Related         []Related      `json:"related,omitempty"`
+	Suspend         bool           `json:"suspend,omitempty"`
+	Approval        *Approval      `json:"approval,omitempty"`
+	Retry           *ActionRequest `json:"retry,omitempty"`
+	Expedite        *ActionRequest `json:"expedite,omitempty"`
+	Phase           string         `json:"phase,omitempty"`
+	PhaseTimes      []PhaseTime    `json:"phaseTimes,omitempty"`
+	FirstObservedAt string         `json:"firstObservedAt,omitempty"`
+	AccumulateUntil string         `json:"accumulateUntil,omitempty"`
+	Tracking        *Tracking      `json:"tracking,omitempty"`
+	Owners          []string       `json:"owners,omitempty"`
+	Enrichments     []Enrichment   `json:"enrichments,omitempty"`
+	Priority        string         `json:"priority,omitempty"`
+	Investigation   *Investigation `json:"investigation,omitempty"`
+	Remediation     *Remediation   `json:"remediation,omitempty"`
+	PullRequest     *PullRequest   `json:"pullRequest,omitempty"`
+	Attempts        *Attempts      `json:"attempts,omitempty"`
+	// TotalUsage sums token and cost accounting across every attempt of
+	// both stages, lifted from the Investigation/Remediation children.
+	TotalUsage        *Usage     `json:"totalUsage,omitempty"`
+	ActiveRun         *ActiveRun `json:"activeRun,omitempty"`
+	LastFailureReason string     `json:"lastFailureReason,omitempty"`
+	CompletedAt       string     `json:"completedAt,omitempty"`
 	// UserActions are the verbs the requesting user may invoke; the client
 	// intersects them with the state machine. Absent means read-only.
 	UserActions []string `json:"userActions,omitempty"`
@@ -140,8 +144,8 @@ type Enrichment struct {
 	AppliedAt  string            `json:"appliedAt,omitempty"`
 }
 
-// Investigation mirrors the Finding's investigation summary, plus the report
-// markdown lifted from the Investigation child.
+// Investigation mirrors the Finding's investigation summary, plus the
+// report markdown and run accounting lifted from the Investigation child.
 type Investigation struct {
 	Name           string `json:"name,omitempty"`
 	Attempt        int32  `json:"attempt,omitempty"`
@@ -154,10 +158,13 @@ type Investigation struct {
 	AwaitApproval  bool   `json:"awaitApproval,omitempty"`
 	CompletedAt    string `json:"completedAt,omitempty"`
 	Report         string `json:"report,omitempty"`
+	Harness        string `json:"harness,omitempty"`
+	Model          string `json:"model,omitempty"`
+	Usage          *Usage `json:"usage,omitempty"`
 }
 
 // Remediation mirrors the Finding's remediation summary, plus the report
-// markdown lifted from the Remediation child.
+// markdown and run accounting lifted from the Remediation child.
 type Remediation struct {
 	Name        string `json:"name,omitempty"`
 	Attempt     int32  `json:"attempt,omitempty"`
@@ -166,6 +173,20 @@ type Remediation struct {
 	Branch      string `json:"branch,omitempty"`
 	CompletedAt string `json:"completedAt,omitempty"`
 	Report      string `json:"report,omitempty"`
+	Harness     string `json:"harness,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Usage       *Usage `json:"usage,omitempty"`
+}
+
+// Usage is token and cost accounting — one run's, or the finding's total
+// across every attempt of both stages. Cost is integer micro-USD, matching
+// the rollup wire type.
+type Usage struct {
+	InputTokens         int64 `json:"inputTokens,omitempty"`
+	OutputTokens        int64 `json:"outputTokens,omitempty"`
+	CacheReadTokens     int64 `json:"cacheReadTokens,omitempty"`
+	CacheCreationTokens int64 `json:"cacheCreationTokens,omitempty"`
+	CostMicroUSD        int64 `json:"costMicroUSD,omitempty"`
 }
 
 // PullRequest is the remediation pull request's lifecycle.
@@ -269,9 +290,10 @@ func (s *Server) buildDataset(ctx context.Context, withFindings bool, verbs []st
 	if err := s.client.List(ctx, &findings, client.InNamespace(s.namespace)); err != nil {
 		return nil, fmt.Errorf("list findings: %w", err)
 	}
+	runs := s.loadRunDetails(ctx)
 	for i := range findings.Items {
 		out := projectFinding(&findings.Items[i], verbs)
-		s.attachReports(ctx, &findings.Items[i], &out)
+		runs.attach(&findings.Items[i], &out)
 		ds.Findings = append(ds.Findings, out)
 	}
 	// Newest first, stable across refetches.
@@ -285,23 +307,106 @@ func (s *Server) buildDataset(ctx context.Context, withFindings bool, verbs []st
 	return ds, nil
 }
 
-// attachReports lifts the run reports off the Investigation/Remediation
-// children onto the projection — the Finding carries only summaries, the
-// full markdown lives on the child. An absent child (expired, deleted)
-// simply leaves the report empty.
-func (s *Server) attachReports(ctx context.Context, f *v1alpha1.Finding, out *Finding) {
-	if inv := f.Status.Investigation; inv != nil && inv.Name != "" && out.Investigation != nil {
-		var child v1alpha1.Investigation
-		if err := s.client.Get(ctx, client.ObjectKey{Namespace: f.Namespace, Name: inv.Name}, &child); err == nil {
+// runDetails indexes the Investigation/Remediation children, listed once
+// per dataset build: the summarised (latest) child's report and stage
+// accounting by child name, plus per-finding usage totals across every
+// attempt of both stages.
+type runDetails struct {
+	inv    map[string]*v1alpha1.Investigation
+	rem    map[string]*v1alpha1.Remediation
+	totals map[string]Usage
+}
+
+// loadRunDetails lists the children. Errors degrade gracefully — reports
+// and usage are absent, the findings surface still renders (a deployment
+// whose RBAC predates the child read grant must not lose the whole page).
+func (s *Server) loadRunDetails(ctx context.Context) runDetails {
+	d := runDetails{
+		inv:    map[string]*v1alpha1.Investigation{},
+		rem:    map[string]*v1alpha1.Remediation{},
+		totals: map[string]Usage{},
+	}
+	var invs v1alpha1.InvestigationList
+	if err := s.client.List(ctx, &invs, client.InNamespace(s.namespace)); err == nil {
+		for i := range invs.Items {
+			child := &invs.Items[i]
+			d.inv[child.Name] = child
+			d.addStage(child.Labels[v1alpha1.LabelFinding], child.Status.Stage)
+		}
+	}
+	var rems v1alpha1.RemediationList
+	if err := s.client.List(ctx, &rems, client.InNamespace(s.namespace)); err == nil {
+		for i := range rems.Items {
+			child := &rems.Items[i]
+			d.rem[child.Name] = child
+			d.addStage(child.Labels[v1alpha1.LabelFinding], child.Status.Stage)
+		}
+	}
+	return d
+}
+
+// addStage folds one child run's accounting into its finding's total.
+func (d *runDetails) addStage(finding string, st *v1alpha1.StageResult) {
+	if finding == "" || st == nil {
+		return
+	}
+	u := d.totals[finding]
+	if su := stageUsage(st); su != nil {
+		u.InputTokens += su.InputTokens
+		u.OutputTokens += su.OutputTokens
+		u.CacheReadTokens += su.CacheReadTokens
+		u.CacheCreationTokens += su.CacheCreationTokens
+		u.CostMicroUSD += su.CostMicroUSD
+	}
+	d.totals[finding] = u
+}
+
+// attach lifts the child-only fields (report, harness, model, usage, and
+// the cross-attempt total) onto one finding's projection. An absent child
+// (expired, deleted) simply leaves them empty.
+func (d *runDetails) attach(f *v1alpha1.Finding, out *Finding) {
+	if inv := f.Status.Investigation; inv != nil && out.Investigation != nil {
+		if child := d.inv[inv.Name]; child != nil {
 			out.Investigation.Report = child.Status.Report
+			if st := child.Status.Stage; st != nil {
+				out.Investigation.Harness = st.Harness
+				out.Investigation.Model = st.Model
+				out.Investigation.Usage = stageUsage(st)
+			}
 		}
 	}
-	if rem := f.Status.Remediation; rem != nil && rem.Name != "" && out.Remediation != nil {
-		var child v1alpha1.Remediation
-		if err := s.client.Get(ctx, client.ObjectKey{Namespace: f.Namespace, Name: rem.Name}, &child); err == nil {
+	if rem := f.Status.Remediation; rem != nil && out.Remediation != nil {
+		if child := d.rem[rem.Name]; child != nil {
 			out.Remediation.Report = child.Status.Report
+			if st := child.Status.Stage; st != nil {
+				out.Remediation.Harness = st.Harness
+				out.Remediation.Model = st.Model
+				out.Remediation.Usage = stageUsage(st)
+			}
 		}
 	}
+	if u, ok := d.totals[f.Name]; ok && u != (Usage{}) {
+		out.TotalUsage = &u
+	}
+}
+
+// stageUsage converts a stage's usage block onto the wire type, or nil when
+// the harness reported nothing. A malformed cost string parses as zero —
+// the tokens still render.
+func stageUsage(st *v1alpha1.StageResult) *Usage {
+	u := Usage{
+		InputTokens:         st.Usage.InputTokens,
+		OutputTokens:        st.Usage.OutputTokens,
+		CacheReadTokens:     st.Usage.CacheReadTokens,
+		CacheCreationTokens: st.Usage.CacheCreationTokens,
+	}
+	if micro, err := stats.ParseCostMicroUSD(st.Usage.CostUSD); err == nil {
+		u.CostMicroUSD = micro
+	}
+	if u == (Usage{}) {
+		return nil
+	}
+	return &u
 }
 
 // projectFinding flattens one Finding CR onto the wire type.

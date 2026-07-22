@@ -4,6 +4,7 @@ import { Icon } from "./icons";
 import { Markdown } from "./Markdown";
 import { Pill } from "./Pills";
 import { PullRequestCard } from "./PullRequest";
+import { RunAccountingRows } from "./RunUsage";
 
 export function RemediationTab({ finding }: { finding: Finding }) {
   const rem = finding.remediation;
@@ -51,6 +52,7 @@ export function RemediationTab({ finding }: { finding: Finding }) {
               <dt>Completed</dt>
               <dd>{formatDate(rem.completedAt)}</dd>
             </div>
+            <RunAccountingRows harness={rem.harness} model={rem.model} usage={rem.usage} />
           </dl>
         ) : (
           <p class="text-faint">No remediation run yet.</p>

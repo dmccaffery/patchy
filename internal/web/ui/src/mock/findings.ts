@@ -385,6 +385,15 @@ const findings: Finding[] = [
         "(`file:///etc/passwd`) and exfiltrate them via the enclosure URL.\n\n## Reachability\n\nFeed URLs are " +
         "user-suppliable through the import form — the parser input is attacker-controlled end to end.\n\n" +
         "## Recommendation\n\nDisable DTD processing on the shared `xml.NewDecoder` wrapper; no feature depends on entities.",
+      harness: "claude-code",
+      model: "claude-sonnet-5",
+      usage: {
+        inputTokens: 48_200,
+        outputTokens: 9_400,
+        cacheReadTokens: 612_000,
+        cacheCreationTokens: 38_500,
+        costMicroUSD: 1_840_000,
+      },
     },
     remediation: {
       name: "gh-cs-dke-podcast-7d01b3-rem-1",
@@ -397,6 +406,15 @@ const findings: Finding[] = [
         "## Change\n\nDisabled DTD processing and external entity resolution in `internal/feeds/parse.go` " +
         "(`decoder.Strict = true`, entity map cleared).\n\n## Verification\n\nAdded a regression test with a " +
         "malicious feed fixture; the parser now rejects it. Full test suite passes.",
+      harness: "claude-code",
+      model: "claude-sonnet-5",
+      usage: {
+        inputTokens: 61_800,
+        outputTokens: 14_100,
+        cacheReadTokens: 890_000,
+        cacheCreationTokens: 52_300,
+        costMicroUSD: 2_710_000,
+      },
     },
     pullRequest: {
       number: 482,
@@ -404,6 +422,13 @@ const findings: Finding[] = [
       state: "open",
     },
     attempts: { investigation: 1, remediation: 1 },
+    totalUsage: {
+      inputTokens: 110_000,
+      outputTokens: 23_500,
+      cacheReadTokens: 1_502_000,
+      cacheCreationTokens: 90_800,
+      costMicroUSD: 4_550_000,
+    },
   },
   {
     name: "gh-cs-bitwise-site-2a90cf",

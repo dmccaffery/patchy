@@ -1,6 +1,6 @@
 // Formatting helpers. Absent figures render as "—", never as false zeros.
 
-import type { Phase } from "./types";
+import type { Phase, Usage } from "./types";
 
 export const DASH = "—";
 
@@ -78,6 +78,21 @@ export function formatTokens(tokens?: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
   if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
   return String(tokens);
+}
+
+// totalTokens sums a usage block's token figures; undefined when nothing
+// was reported (so it renders as a dash, not a false zero).
+export function totalTokens(u?: Usage): number | undefined {
+  if (!u) return undefined;
+  const sum = (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0);
+  return sum > 0 ? sum : undefined;
+}
+
+// usageBreakdown is the tooltip/detail split behind a summed token figure.
+export function usageBreakdown(u?: Usage): string | undefined {
+  if (!u || totalTokens(u) === undefined) return undefined;
+  const cache = (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0);
+  return `in ${formatTokens(u.inputTokens ?? 0)} · out ${formatTokens(u.outputTokens ?? 0)} · cache ${formatTokens(cache)}`;
 }
 
 // formatMs renders a millisecond sum or average as a compact duration.

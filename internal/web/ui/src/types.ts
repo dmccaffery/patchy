@@ -102,6 +102,17 @@ export interface Enrichment {
   appliedAt?: string;
 }
 
+// Usage is token and cost accounting — one run's, or the finding's total
+// across every attempt of both stages. Cost is integer micro-USD, matching
+// StageAggregate.
+export interface Usage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  costMicroUSD?: number;
+}
+
 export interface InvestigationSummary {
   name?: string;
   attempt?: number;
@@ -113,7 +124,11 @@ export interface InvestigationSummary {
   impact?: Rating;
   awaitApproval?: boolean;
   completedAt?: string;
-  report?: string; // full report markdown, lifted from the Investigation child
+  // Lifted from the Investigation child (absent once it expires).
+  report?: string;
+  harness?: string;
+  model?: string;
+  usage?: Usage;
 }
 
 export interface RemediationSummary {
@@ -123,7 +138,11 @@ export interface RemediationSummary {
   success?: boolean;
   branch?: string;
   completedAt?: string;
-  report?: string; // full report markdown, lifted from the Remediation child
+  // Lifted from the Remediation child (absent once it expires).
+  report?: string;
+  harness?: string;
+  model?: string;
+  usage?: Usage;
 }
 
 export interface PullRequestStatus {
@@ -177,6 +196,7 @@ export interface Finding {
   remediation?: RemediationSummary;
   pullRequest?: PullRequestStatus;
   attempts?: AttemptCounts;
+  totalUsage?: Usage; // summed across every attempt of both stages
   activeRun?: ActiveRun;
   lastFailureReason?: string;
   completedAt?: string;

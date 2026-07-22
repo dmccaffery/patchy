@@ -3,6 +3,7 @@ import type { Finding } from "../types";
 import { hrefForList } from "../router";
 import { Icon } from "./icons";
 import { PhasePill, Pill, SeverityPill } from "./Pills";
+import { UsageBadges } from "./RunUsage";
 
 export const ICON_BTN =
   "inline-grid size-8 cursor-pointer place-items-center rounded-lg border border-line-2 bg-surface text-muted no-underline hover:text-fg";
@@ -113,6 +114,7 @@ export function DetailHeader({
         )}
       </div>
       <div class="ml-auto flex flex-wrap items-center gap-2 max-sm:ml-0">
+        <UsageBadges finding={finding} />
         <PhasePill phase={finding.phase} label="Status" />
         <SeverityPill severity={finding.severity} label="Severity" />
         {finding.suspend ? <Pill tone="amber">suspended</Pill> : null}

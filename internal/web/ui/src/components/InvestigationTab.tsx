@@ -2,6 +2,7 @@ import type { Finding } from "../types";
 import { DASH, formatConfidence, formatDate } from "../format";
 import { Markdown } from "./Markdown";
 import { Pill, VerdictPill } from "./Pills";
+import { RunAccountingRows } from "./RunUsage";
 
 export function InvestigationTab({ finding }: { finding: Finding }) {
   const inv = finding.investigation;
@@ -43,6 +44,7 @@ export function InvestigationTab({ finding }: { finding: Finding }) {
               <dt>Completed</dt>
               <dd>{formatDate(inv.completedAt)}</dd>
             </div>
+            <RunAccountingRows harness={inv.harness} model={inv.model} usage={inv.usage} />
           </dl>
         ) : (
           <p class="text-faint">No investigation run yet.</p>

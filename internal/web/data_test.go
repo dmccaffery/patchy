@@ -189,16 +189,46 @@ func TestBuildDatasetProjection(t *testing.T) {
 	}
 }
 
-func TestBuildDatasetAttachesReports(t *testing.T) {
+func TestBuildDatasetAttachesRunDetail(t *testing.T) {
+	childMeta := func(name string) metav1.ObjectMeta {
+		return metav1.ObjectMeta{
+			Name: name, Namespace: "patchy",
+			Labels: map[string]string{v1alpha1.LabelFinding: "gh-cs-orders-1"},
+		}
+	}
+	// A failed first attempt plus the summarised second: totals span both.
+	invOld := &v1alpha1.Investigation{
+		ObjectMeta: childMeta("gh-cs-orders-1-inv-0"),
+		Status: v1alpha1.InvestigationStatus{
+			Stage: &v1alpha1.StageResult{Outcome: "timeout", Usage: v1alpha1.UsageSummary{
+				InputTokens: 100, OutputTokens: 10, CostUSD: "0.25",
+			}},
+		},
+	}
 	inv := &v1alpha1.Investigation{
-		ObjectMeta: metav1.ObjectMeta{Name: "gh-cs-orders-1-inv-1", Namespace: "patchy"},
-		Status:     v1alpha1.InvestigationStatus{Report: "## Analysis\n\ninjectable"},
+		ObjectMeta: childMeta("gh-cs-orders-1-inv-1"),
+		Status: v1alpha1.InvestigationStatus{
+			Report: "## Analysis\n\ninjectable",
+			Stage: &v1alpha1.StageResult{
+				Outcome: "ok", Harness: "claude-code", Model: "claude-sonnet-5",
+				Usage: v1alpha1.UsageSummary{
+					InputTokens: 1000, OutputTokens: 200,
+					CacheReadTokens: 5000, CacheCreationTokens: 300, CostUSD: "1.50",
+				},
+			},
+		},
 	}
 	rem := &v1alpha1.Remediation{
-		ObjectMeta: metav1.ObjectMeta{Name: "gh-cs-orders-1-rem-1", Namespace: "patchy"},
-		Status:     v1alpha1.RemediationStatus{Report: "## Fix\n\nparameterised"},
+		ObjectMeta: childMeta("gh-cs-orders-1-rem-1"),
+		Status: v1alpha1.RemediationStatus{
+			Report: "## Fix\n\nparameterised",
+			Stage: &v1alpha1.StageResult{
+				Outcome: "ok", Harness: "claude-code", Model: "claude-sonnet-5",
+				Usage: v1alpha1.UsageSummary{InputTokens: 400, OutputTokens: 80, CostUSD: "0.75"},
+			},
+		},
 	}
-	s := testServer(t, fullFinding(), inv, rem)
+	s := testServer(t, fullFinding(), invOld, inv, rem)
 	ds, err := s.buildDataset(t.Context(), true, nil, nil)
 	if err != nil {
 		t.Fatalf("buildDataset: %v", err)
@@ -207,17 +237,35 @@ func TestBuildDatasetAttachesReports(t *testing.T) {
 	if f.Investigation == nil || f.Investigation.Report != "## Analysis\n\ninjectable" {
 		t.Errorf("investigation report = %+v", f.Investigation)
 	}
+	if f.Investigation.Harness != "claude-code" || f.Investigation.Model != "claude-sonnet-5" {
+		t.Errorf("investigation harness/model = %q/%q", f.Investigation.Harness, f.Investigation.Model)
+	}
+	if u := f.Investigation.Usage; u == nil || u.InputTokens != 1000 || u.CostMicroUSD != 1_500_000 {
+		t.Errorf("investigation usage = %+v", u)
+	}
 	if f.Remediation == nil || f.Remediation.Report != "## Fix\n\nparameterised" {
 		t.Errorf("remediation report = %+v", f.Remediation)
 	}
+	if u := f.Remediation.Usage; u == nil || u.CostMicroUSD != 750_000 {
+		t.Errorf("remediation usage = %+v", u)
+	}
+	want := Usage{
+		InputTokens: 1500, OutputTokens: 290,
+		CacheReadTokens: 5000, CacheCreationTokens: 300, CostMicroUSD: 2_500_000,
+	}
+	if f.TotalUsage == nil || *f.TotalUsage != want {
+		t.Errorf("totalUsage = %+v, want %+v", f.TotalUsage, want)
+	}
 
-	// An expired/absent child leaves the report empty rather than erroring.
+	// An expired/absent child leaves report and accounting empty rather
+	// than erroring.
 	s = testServer(t, fullFinding())
 	if ds, err = s.buildDataset(t.Context(), true, nil, nil); err != nil {
 		t.Fatalf("buildDataset without children: %v", err)
 	}
-	if got := ds.Findings[0].Investigation.Report; got != "" {
-		t.Errorf("report without child = %q, want empty", got)
+	f = ds.Findings[0]
+	if f.Investigation.Report != "" || f.Investigation.Usage != nil || f.TotalUsage != nil {
+		t.Errorf("run detail without children = %+v / total %+v, want empty", f.Investigation, f.TotalUsage)
 	}
 }
 
