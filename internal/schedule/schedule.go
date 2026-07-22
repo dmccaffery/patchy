@@ -22,6 +22,10 @@ type Candidate struct {
 	Priority int32
 	// QueuedAt orders equal priorities first-in-first-out and drives aging.
 	QueuedAt time.Time
+	// Expedited candidates rank ahead of every non-expedited one regardless
+	// of priority or aging (a human asked for the front of the queue);
+	// expedited candidates order among themselves as usual.
+	Expedited bool
 }
 
 // AgingPolicy lifts long-waiting candidates so a flood of high-priority work
@@ -44,8 +48,9 @@ func (p AgingPolicy) effective(c Candidate, now time.Time) int32 {
 }
 
 // Pick returns the names of the freeSlots highest-ranked candidates, ordered
-// effective-priority descending, then QueuedAt ascending, then Name — a
-// total, deterministic order so concurrent deciders agree.
+// expedited first, then effective-priority descending, then QueuedAt
+// ascending, then Name — a total, deterministic order so concurrent deciders
+// agree.
 func Pick(pending []Candidate, freeSlots int, now time.Time, aging AgingPolicy) []string {
 	if freeSlots <= 0 || len(pending) == 0 {
 		return nil
@@ -54,6 +59,11 @@ func Pick(pending []Candidate, freeSlots int, now time.Time, aging AgingPolicy) 
 	slices.SortFunc(ranked, func(a, b Candidate) int {
 		ea, eb := aging.effective(a, now), aging.effective(b, now)
 		switch {
+		case a.Expedited != b.Expedited:
+			if a.Expedited {
+				return -1
+			}
+			return 1
 		case ea != eb:
 			return int(eb - ea)
 		case !a.QueuedAt.Equal(b.QueuedAt):

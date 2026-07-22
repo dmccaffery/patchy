@@ -132,10 +132,38 @@ func (s *Server) apply(r *http.Request, cur *v1alpha1.Finding, verb string, id a
 			At:   metav1.NewTime(s.now()),
 			Note: approveNote,
 		}
+	case authz.VerbRetry:
+		if v1alpha1.RetryTarget(cur) == "" {
+			return unavailable() // not Failed, or no recoverable history
+		}
+		if v1alpha1.RetryRequested(cur) {
+			return nil // a fresh retry is already pending consumption
+		}
+		cur.Spec.Retry = &v1alpha1.ActionRequest{By: id.Username, At: metav1.NewTime(s.now())}
+	case authz.VerbExpedite:
+		if cur.Spec.Expedite != nil {
+			return nil // expedite is standing; first request wins
+		}
+		if !expeditable(cur.Status.Phase) {
+			return unavailable()
+		}
+		cur.Spec.Expedite = &v1alpha1.ActionRequest{By: id.Username, At: metav1.NewTime(s.now())}
 	default:
 		return &statusError{code: http.StatusNotFound, msg: "unknown action"}
 	}
 	return s.client.Update(r.Context(), cur)
+}
+
+// expeditable reports the phases where an expedite still has waiting stages
+// ahead of it to skip: everything up to and including Queued. A run already
+// in flight (Remediating) or a PR under review gains nothing from it.
+func expeditable(p v1alpha1.Phase) bool {
+	switch p {
+	case v1alpha1.PhaseOpened, v1alpha1.PhaseEnhanced, v1alpha1.PhaseInvestigating,
+		v1alpha1.PhaseAwaitingApproval, v1alpha1.PhaseQueued:
+		return true
+	}
+	return false
 }
 
 // staleApproval reports a HandedOff finding whose approval is too old to

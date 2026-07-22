@@ -158,6 +158,24 @@ spec:
                   at ingest.
                 maxLength: 65536
                 type: string
+              expedite:
+                description: |-
+                  Expedite marks the finding urgent for its whole lifetime
+                  (human-written): the investigation gate skips the accumulation window
+                  and minimum age, and both schedulers rank the finding's runs ahead of
+                  all non-expedited work.
+                properties:
+                  at:
+                    description: At is when the request was received.
+                    format: date-time
+                    type: string
+                  by:
+                    description: By is the requesting login.
+                    type: string
+                required:
+                - at
+                - by
+                type: object
               integrationRef:
                 description: IntegrationRef names the Integration that ingested this
                   finding.
@@ -225,6 +243,24 @@ spec:
                 required:
                 - type
                 - url
+                type: object
+              retry:
+                description: |-
+                  Retry requests recovery of a Failed finding back to the state it
+                  failed from (human-written). Actionable while newer than
+                  status.completedAt; the phase-owning controller consumes it by
+                  performing the transition.
+                properties:
+                  at:
+                    description: At is when the request was received.
+                    format: date-time
+                    type: string
+                  by:
+                    description: By is the requesting login.
+                    type: string
+                required:
+                - at
+                - by
                 type: object
               ruleID:
                 description: RuleID is the scanner rule that fired.

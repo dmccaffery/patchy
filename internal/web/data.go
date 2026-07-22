@@ -53,6 +53,8 @@ type Finding struct {
 	Related           []Related      `json:"related,omitempty"`
 	Suspend           bool           `json:"suspend,omitempty"`
 	Approval          *Approval      `json:"approval,omitempty"`
+	Retry             *ActionRequest `json:"retry,omitempty"`
+	Expedite          *ActionRequest `json:"expedite,omitempty"`
 	Phase             string         `json:"phase,omitempty"`
 	PhaseTimes        []PhaseTime    `json:"phaseTimes,omitempty"`
 	FirstObservedAt   string         `json:"firstObservedAt,omitempty"`
@@ -108,6 +110,12 @@ type Approval struct {
 	By   string `json:"by"`
 	At   string `json:"at"`
 	Note string `json:"note,omitempty"`
+}
+
+// ActionRequest is a recorded human retry/expedite request.
+type ActionRequest struct {
+	By string `json:"by"`
+	At string `json:"at"`
 }
 
 // PhaseTime is one phase-entry log record.
@@ -320,6 +328,12 @@ func projectFinding(f *v1alpha1.Finding, verbs []string) Finding {
 	}
 	if spec.Approval != nil {
 		out.Approval = &Approval{By: spec.Approval.By, At: stamp(spec.Approval.At), Note: spec.Approval.Note}
+	}
+	if spec.Retry != nil {
+		out.Retry = &ActionRequest{By: spec.Retry.By, At: stamp(spec.Retry.At)}
+	}
+	if spec.Expedite != nil {
+		out.Expedite = &ActionRequest{By: spec.Expedite.By, At: stamp(spec.Expedite.At)}
 	}
 	for _, pt := range st.PhaseTimes {
 		out.PhaseTimes = append(out.PhaseTimes, PhaseTime{Phase: string(pt.Phase), At: stamp(pt.At)})

@@ -18,6 +18,8 @@ export type IconName =
   | "alertTriangle"
   | "pause"
   | "play"
+  | "rotateCcw"
+  | "zap"
   | "chevronDown"
   | "copy"
   | "shieldCheck";
@@ -90,6 +92,15 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   play: <polygon points="6 3 20 12 6 21 6 3" />,
+  rotateCcw: (
+    <>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </>
+  ),
+  zap: (
+    <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+  ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
   copy: (
     <>

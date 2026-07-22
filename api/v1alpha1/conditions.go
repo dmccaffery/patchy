@@ -21,6 +21,9 @@ const (
 	ConditionInvestigated = "Investigated"
 	// ConditionApproved marks a Finding whose spec.approval was accepted.
 	ConditionApproved = "Approved"
+	// ConditionRetried marks a Finding whose spec.retry was consumed — a
+	// human recovered it from Failed; the message carries the requester.
+	ConditionRetried = "Retried"
 	// ConditionForgeResolved reports whether the Finding's repository resolved
 	// to exactly one Forge (False reasons: NoRepository, NoForgeMatch,
 	// Ambiguous). Parked findings are re-queued when Forges change.

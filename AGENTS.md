@@ -35,7 +35,7 @@ Seven binaries, one module. "Not monolithic" means separate binaries/deployments
   Kubernetes API; no credentials beyond the model key.
 - `cmd/status-server` — the human-facing status page (NOT a controller: no reconcilers, no leases): the embedded
   SPA + JSON projection of Findings/FindingRollups, SSE refetch signal, OIDC sign-in, and the access-review-gated
-  approve/suspend/resume actions. Rollup statistics are public; the findings surface always requires auth.
+  approve/retry/expedite/suspend/resume actions. Rollup statistics are public; the findings surface always requires auth.
   Writes Finding SPEC only (`spec.approval`, `spec.suspend`) — never status, never a phase.
 
 ## Layout
@@ -94,7 +94,7 @@ docs/ overrides/    Zensical docs site (zensical.toml at the root; patchy-brande
   the embedded UI (`internal/web/ui`, Vite/Preact, single-file build embedded behind the `withui` tag; `mise run
   ui` builds it, bare `go build` compiles a stub). `auth` = who you are (OIDC/none/anonymous/unconfigured,
   cookie sessions, zero k8s imports); `authz` = what you may do (SubjectAccessReviews for the custom verbs
-  approve/suspend/resume + native get).
+  approve/retry/expedite/suspend/resume + native get).
 - `ghas`, `enhancers` — the built-in `pkg/source` and `pkg/enhance` implementations.
 - `harness`, `runner` — adapted from evolve: harness builds argv, runner executes (observe-and-collect with a
   token-budget kill switch), harness parses stdout. Keep that separation.
@@ -122,6 +122,8 @@ docs/ overrides/    Zensical docs site (zensical.toml at the root; patchy-brande
 `api/v1alpha1` owns the phase taxonomy and legal transitions (`transitions.go`: `CanTransition`, `Terminal`,
 `SetPhase`); no phase edge has two writer components. The flow:
 `Opened → Enhanced → Investigating → Queued → Remediating → InReview → Remediated`, with `AwaitingApproval`
-before `Queued` on holds, and `Dismissed`/`HandedOff`/`Failed` terminal (`HandedOff` revivable by approval).
+before `Queued` on holds, and `Dismissed`/`HandedOff`/`Failed` terminal (`HandedOff` revivable by approval,
+`Failed` by human retry back to the pre-failure state; `spec.expedite` skips accumulation/min-age and jumps both
+schedulers' queues).
 Accumulation is a condition (`AccumulationComplete`), not a phase. See DESIGN.md for the full flow and
 .claude/plans/ for the transition table with writers.

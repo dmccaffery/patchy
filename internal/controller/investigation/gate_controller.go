@@ -50,18 +50,32 @@ func (r *GateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := r.Get(ctx, req.NamespacedName, &fnd); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	if !fnd.DeletionTimestamp.IsZero() || fnd.Spec.Suspend || fnd.Status.Phase != v1alpha1.PhaseEnhanced {
+	if !fnd.DeletionTimestamp.IsZero() || fnd.Spec.Suspend {
+		return ctrl.Result{}, nil
+	}
+	// A failed investigation a human asked to retry recovers to Enhanced
+	// (edge Failed→Enhanced); the next reconcile runs the normal gate.
+	if fnd.Status.Phase == v1alpha1.PhaseFailed {
+		if v1alpha1.RetryRequested(&fnd) && v1alpha1.RetryTarget(&fnd) == v1alpha1.PhaseEnhanced {
+			return ctrl.Result{}, r.retryRevert(ctx, &fnd)
+		}
+		return ctrl.Result{}, nil
+	}
+	if fnd.Status.Phase != v1alpha1.PhaseEnhanced {
 		return ctrl.Result{}, nil
 	}
 
-	// Gate 1: the accumulation window must be closed.
-	if !meta.IsStatusConditionTrue(fnd.Status.Conditions, v1alpha1.ConditionAccumulationComplete) {
-		return ctrl.Result{}, nil // the window condition flip re-queues us
-	}
-	// Gate 2: minimum age.
-	if first := fnd.Status.FirstObservedAt; first != nil {
-		if wait := first.Add(r.MinAge).Sub(r.now()); wait > 0 {
-			return ctrl.Result{RequeueAfter: wait}, nil
+	// Gates 1 and 2 are waiting stages; an expedited finding skips both.
+	if fnd.Spec.Expedite == nil {
+		// Gate 1: the accumulation window must be closed.
+		if !meta.IsStatusConditionTrue(fnd.Status.Conditions, v1alpha1.ConditionAccumulationComplete) {
+			return ctrl.Result{}, nil // the window condition flip re-queues us
+		}
+		// Gate 2: minimum age.
+		if first := fnd.Status.FirstObservedAt; first != nil {
+			if wait := first.Add(r.MinAge).Sub(r.now()); wait > 0 {
+				return ctrl.Result{RequeueAfter: wait}, nil
+			}
 		}
 	}
 
@@ -198,6 +212,39 @@ func (r *GateReconciler) openInvestigation(ctx context.Context, fnd *v1alpha1.Fi
 	r.log().LogAttrs(ctx, slog.LevelInfo, "investigation opened",
 		slog.String("finding", fnd.Name), slog.String("investigation", name))
 	return nil
+}
+
+// retryRevert consumes a human retry of a failed investigation: the finding
+// recovers to Enhanced and the gate re-admits it on the next reconcile,
+// opening the next attempt. Consumption is implicit — the transition clears
+// status.completedAt, so RetryRequested turns false without a spec write.
+func (r *GateReconciler) retryRevert(ctx context.Context, fnd *v1alpha1.Finding) error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var cur v1alpha1.Finding
+		if err := r.Get(ctx, client.ObjectKeyFromObject(fnd), &cur); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if cur.Status.Phase != v1alpha1.PhaseFailed || !v1alpha1.RetryRequested(&cur) ||
+			v1alpha1.RetryTarget(&cur) != v1alpha1.PhaseEnhanced {
+			return nil
+		}
+		if err := v1alpha1.SetPhase(&cur, v1alpha1.PhaseEnhanced, r.now()); err != nil {
+			return err
+		}
+		meta.SetStatusCondition(&cur.Status.Conditions, metav1.Condition{
+			Type:               v1alpha1.ConditionRetried,
+			Status:             metav1.ConditionTrue,
+			Reason:             "RetryRequested",
+			Message:            cur.Spec.Retry.By,
+			ObservedGeneration: cur.Generation,
+		})
+		return r.Status().Update(ctx, &cur)
+	})
+	if err == nil {
+		r.log().LogAttrs(ctx, slog.LevelInfo, "failed finding recovered for retry",
+			slog.String("finding", fnd.Name), slog.String("to", string(v1alpha1.PhaseEnhanced)))
+	}
+	return err
 }
 
 // park records why the finding cannot proceed. Terminal parks (no

@@ -96,9 +96,10 @@ func (r *InvestigationReconciler) schedule(ctx context.Context) (ctrl.Result, er
 			}
 			sev := v1alpha1.Level(inv.Labels[v1alpha1.LabelSeverity])
 			pending = append(pending, schedule.Candidate{
-				Name:     inv.Name,
-				Priority: priority.Score(sev, "", "", "", priority.DefaultWeights),
-				QueuedAt: inv.CreationTimestamp.Time,
+				Name:      inv.Name,
+				Priority:  priority.Score(sev, "", "", "", priority.DefaultWeights),
+				QueuedAt:  inv.CreationTimestamp.Time,
+				Expedited: r.expedited(ctx, inv.Namespace, inv.Spec.FindingRef.Name),
 			})
 		}
 	}
@@ -113,6 +114,19 @@ func (r *InvestigationReconciler) schedule(ctx context.Context) (ctrl.Result, er
 	}
 	// Safety tick: re-inspect even if an event is lost.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// expedited reads the parent finding's expedite mark (cached client; a miss
+// simply ranks the run normally).
+func (r *InvestigationReconciler) expedited(ctx context.Context, namespace, finding string) bool {
+	if finding == "" {
+		return false
+	}
+	var fnd v1alpha1.Finding
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: finding}, &fnd); err != nil {
+		return false
+	}
+	return fnd.Spec.Expedite != nil
 }
 
 // grant moves one investigation to Running (idempotent).

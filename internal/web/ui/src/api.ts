@@ -6,7 +6,7 @@
 // mutation is re-checked on POST. The client only reflects 401/403.
 
 import type { ActionVerb, Dataset, Finding } from "./types";
-import { availableActions } from "./actions";
+import { availableActions, retryTarget } from "./actions";
 import { mockDataset } from "./mock/findings";
 import { DEFAULT_PERSONA, type Persona } from "./mock/personas";
 
@@ -80,6 +80,14 @@ function demoPostAction(name: string, verb: ActionVerb, persona: Persona): void 
     f.approval = { by: persona.label, at: now, note: "Approved from the status page (demo)." };
     if (f.investigation) f.investigation.awaitApproval = false;
     f.completedAt = undefined;
+  } else if (verb === "retry") {
+    const target = retryTarget(f) ?? "Enhanced";
+    f.phase = target;
+    f.phaseTimes = [...(f.phaseTimes ?? []), { phase: target, at: now }];
+    f.retry = { by: persona.label, at: now };
+    f.completedAt = undefined;
+  } else if (verb === "expedite") {
+    f.expedite = { by: persona.label, at: now };
   } else {
     f.suspend = verb === "suspend";
   }

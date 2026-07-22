@@ -33,16 +33,28 @@ The screenshots below show the [canned dev data](#canned-data-in-dev) — every 
 
 The action bar renders only the verbs the signed-in user is granted _and_ the finding's state machine allows:
 
-| Action      | Available when                    | What the server writes                                          |
-| ----------- | --------------------------------- | --------------------------------------------------------------- |
-| **Approve** | `AwaitingApproval` or `HandedOff` | `spec.approval` — the same record the `/approve` comment writes |
-| **Suspend** | any non-terminal phase            | `spec.suspend: true`                                            |
-| **Resume**  | a suspended finding               | `spec.suspend: false`                                           |
+| Action       | Available when                    | What the server writes                                          |
+| ------------ | --------------------------------- | --------------------------------------------------------------- |
+| **Approve**  | `AwaitingApproval` or `HandedOff` | `spec.approval` — the same record the `/approve` comment writes |
+| **Retry**    | `Failed`                          | `spec.retry` — a recovery request                               |
+| **Expedite** | any phase up to `Queued`          | `spec.expedite` — a standing urgency mark                       |
+| **Suspend**  | any non-terminal phase            | `spec.suspend: true`                                            |
+| **Resume**   | a suspended finding               | `spec.suspend: false`                                           |
 
 The status server never moves a phase. Approving records the approval; the remediation-controller's spawner then drives
 `AwaitingApproval → Queued` (or revives `HandedOff → Queued` when the approval is newer than the finding's completion)
 exactly as it does for a `/approve` issue comment — the state machine's one-writer-per-edge rule holds no matter which
 surface the human used.
+
+**Retry** recovers a `Failed` finding to the state immediately before the failure: a failed investigation reverts to
+`Enhanced` (the gate opens the next attempt), a failed remediation — or a pull request closed without merging — re-
+queues to `Queued` (the spawner creates the next attempt). Each edge keeps its single writer: the investigation gate
+drives `Failed → Enhanced`, the remediation spawner `Failed → Queued`. A retry is consumed by the recovery itself; if
+the finding fails again, another retry is required.
+
+**Expedite** marks the finding urgent for its whole lifetime: the investigation gate skips the accumulation window and
+minimum-age wait, and both schedulers rank the finding's runs ahead of all non-expedited work. It does not bypass an
+`AwaitingApproval` hold — that remains approve's job.
 
 ## Access model
 
@@ -53,7 +65,7 @@ Two tiers, on purpose:
 2. **Findings require sign-in + RBAC.** Without an [auth configuration](configuration/status-server.md), the findings
    views show "sign-in is not configured" and nothing else leaves the cluster. With one, a signed-in user sees findings
    only if RBAC grants `get` on `findings`, and each action button only with the matching custom verb (`approve` /
-   `suspend` / `resume` on `findings.patchy.bitwisemedia.uk`):
+   `retry` / `expedite` / `suspend` / `resume` on `findings.patchy.bitwisemedia.uk`):
 
 ```yaml
 rules:

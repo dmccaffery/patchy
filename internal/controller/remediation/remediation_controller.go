@@ -100,9 +100,10 @@ func (r *RemediationReconciler) schedule(ctx context.Context) (ctrl.Result, erro
 				continue
 			}
 			pending = append(pending, schedule.Candidate{
-				Name:     rem.Name,
-				Priority: rem.Spec.Priority,
-				QueuedAt: rem.CreationTimestamp.Time,
+				Name:      rem.Name,
+				Priority:  rem.Spec.Priority,
+				QueuedAt:  rem.CreationTimestamp.Time,
+				Expedited: r.expedited(ctx, rem.Namespace, rem.Spec.FindingRef.Name),
 			})
 		}
 	}
@@ -116,6 +117,19 @@ func (r *RemediationReconciler) schedule(ctx context.Context) (ctrl.Result, erro
 		}
 	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// expedited reads the parent finding's expedite mark (cached client; a miss
+// simply ranks the run normally).
+func (r *RemediationReconciler) expedited(ctx context.Context, namespace, finding string) bool {
+	if finding == "" {
+		return false
+	}
+	var fnd v1alpha1.Finding
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: finding}, &fnd); err != nil {
+		return false
+	}
+	return fnd.Spec.Expedite != nil
 }
 
 // grant moves one remediation to Running and its finding to Remediating

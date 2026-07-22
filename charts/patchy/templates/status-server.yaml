@@ -82,7 +82,8 @@ data:
     {{- end }}
 ---
 # Reads Findings/FindingRollups for the projection; writes Finding SPEC only
-# (approve records spec.approval, suspend/resume toggle spec.suspend).
+# (approve records spec.approval, retry/expedite record spec.retry /
+# spec.expedite, suspend/resume toggle spec.suspend).
 # Deliberately NO findings/status — the status server never moves a phase —
 # and no leases (no reconcilers, no leader election).
 apiVersion: rbac.authorization.k8s.io/v1
@@ -186,7 +187,7 @@ rules:
       verbs: [get, list]
     - apiGroups: [patchy.bitwisemedia.uk]
       resources: [findings]
-      verbs: [approve, suspend, resume]
+      verbs: [approve, retry, expedite, suspend, resume]
 {{- end }}
 ---
 apiVersion: apps/v1

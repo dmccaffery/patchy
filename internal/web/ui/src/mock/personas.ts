@@ -13,7 +13,7 @@ export interface Persona {
 export const PERSONAS: Persona[] = [
   { id: "viewer", label: "viewer", grants: [] },
   { id: "approver", label: "approver", grants: ["approve"] },
-  { id: "operator", label: "operator", grants: ["approve", "suspend", "resume"] },
+  { id: "operator", label: "operator", grants: ["approve", "retry", "expedite", "suspend", "resume"] },
 ];
 
 export const DEFAULT_PERSONA = PERSONAS[2];

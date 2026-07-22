@@ -97,9 +97,13 @@ across the estate.
 
 `Finding.status.phase`: `Opened → Enhanced → Investigating → Queued → Remediating → InReview → Remediated`, with
 `AwaitingApproval` before `Queued` when a human must approve, and `Dismissed` / `HandedOff` / `Failed` as the
-other terminal phases (`HandedOff` is revivable by a later approval). Accumulation is a condition, not a phase —
-alerts fold in concurrently with enhancement. Each edge has exactly one writer component; the transition table
-lives in `api/v1alpha1/transitions.go` and is enforced by `SetPhase`.
+other terminal phases (`HandedOff` is revivable by a later approval; `Failed` by a human retry, which recovers
+the finding to the state it failed from — `Enhanced` for a failed investigation, `Queued` for a failed
+remediation or an unmerged PR). A human may also mark a finding **expedited** (`spec.expedite`): the
+investigation gate skips the accumulation window and minimum age, and both schedulers rank its runs ahead of all
+non-expedited work. Accumulation is a condition, not a phase — alerts fold in concurrently with enhancement.
+Each edge has exactly one writer component; the transition table lives in `api/v1alpha1/transitions.go` and is
+enforced by `SetPhase`.
 
 ### Isolation model
 

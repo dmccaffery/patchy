@@ -21,6 +21,12 @@ import (
 const (
 	// VerbApprove is the custom RBAC verb behind the approve action.
 	VerbApprove = "approve"
+	// VerbRetry is the custom RBAC verb behind the retry action (recover a
+	// Failed finding to the state it failed from).
+	VerbRetry = "retry"
+	// VerbExpedite is the custom RBAC verb behind the expedite action (skip
+	// the waiting stages: accumulation, minimum age, queue position).
+	VerbExpedite = "expedite"
 	// VerbSuspend is the custom RBAC verb behind the suspend action.
 	VerbSuspend = "suspend"
 	// VerbResume is the custom RBAC verb behind the resume action.
@@ -28,7 +34,7 @@ const (
 )
 
 // ActionVerbs lists the custom verbs in the order the UI receives them.
-var ActionVerbs = []string{VerbApprove, VerbSuspend, VerbResume}
+var ActionVerbs = []string{VerbApprove, VerbRetry, VerbExpedite, VerbSuspend, VerbResume}
 
 // findingsGroup is the API group carrying the custom verbs.
 const findingsGroup = "patchy.bitwisemedia.uk"

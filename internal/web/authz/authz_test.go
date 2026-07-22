@@ -63,7 +63,7 @@ func TestReviewerGrants(t *testing.T) {
 			name:      "operator",
 			allow:     func(string, string) bool { return true },
 			wantView:  true,
-			wantVerbs: []string{VerbApprove, VerbSuspend, VerbResume},
+			wantVerbs: []string{VerbApprove, VerbRetry, VerbExpedite, VerbSuspend, VerbResume},
 		},
 		{
 			name:  "nothing",
@@ -105,24 +105,24 @@ func TestReviewerCache(t *testing.T) {
 	if _, err := r.Grants(t.Context(), id); err != nil {
 		t.Fatalf("Grants: %v", err)
 	}
-	if calls != 4 {
-		t.Fatalf("first resolve made %d reviews, want 4", calls)
+	if calls != 6 {
+		t.Fatalf("first resolve made %d reviews, want 6", calls)
 	}
 
 	// Same identity with reordered groups hits the cache.
 	if _, err := r.Grants(t.Context(), auth.Identity{Username: "u", Groups: []string{"a", "b"}}); err != nil {
 		t.Fatalf("Grants: %v", err)
 	}
-	if calls != 4 {
-		t.Errorf("cached resolve made %d extra reviews", calls-4)
+	if calls != 6 {
+		t.Errorf("cached resolve made %d extra reviews", calls-6)
 	}
 
 	// A different identity misses.
 	if _, err := r.Grants(t.Context(), auth.Identity{Username: "v"}); err != nil {
 		t.Fatalf("Grants: %v", err)
 	}
-	if calls != 8 {
-		t.Errorf("distinct identity made %d reviews total, want 8", calls)
+	if calls != 12 {
+		t.Errorf("distinct identity made %d reviews total, want 12", calls)
 	}
 
 	// Expiry re-resolves.
@@ -130,8 +130,8 @@ func TestReviewerCache(t *testing.T) {
 	if _, err := r.Grants(t.Context(), id); err != nil {
 		t.Fatalf("Grants: %v", err)
 	}
-	if calls != 12 {
-		t.Errorf("expired resolve made %d reviews total, want 12", calls)
+	if calls != 18 {
+		t.Errorf("expired resolve made %d reviews total, want 18", calls)
 	}
 }
 

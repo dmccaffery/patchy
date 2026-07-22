@@ -58,6 +58,15 @@ func (r *SpawnerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, r.admit(ctx, &fnd, true)
+	case v1alpha1.PhaseFailed:
+		// A failed remediation (or a PR closed unmerged) a human asked to
+		// retry recovers to Queued (edge Failed→Queued); the Queued
+		// reconcile then spawns the next attempt.
+		if !v1alpha1.RetryRequested(&fnd) || v1alpha1.RetryTarget(&fnd) != v1alpha1.PhaseQueued ||
+			fnd.Spec.Repository == nil || fnd.Status.Investigation == nil {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, r.retryAdmit(ctx, &fnd)
 	case v1alpha1.PhaseQueued:
 		return ctrl.Result{}, r.spawn(ctx, &fnd)
 	default:
@@ -107,6 +116,39 @@ func (r *SpawnerReconciler) admit(ctx context.Context, fnd *v1alpha1.Finding, re
 	return err
 }
 
+// retryAdmit consumes a human retry of a failed remediation: the finding
+// recovers to Queued (edge Failed→Queued). Consumption is implicit — the
+// transition clears status.completedAt, so RetryRequested turns false
+// without a spec write.
+func (r *SpawnerReconciler) retryAdmit(ctx context.Context, fnd *v1alpha1.Finding) error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var cur v1alpha1.Finding
+		if err := r.Get(ctx, client.ObjectKeyFromObject(fnd), &cur); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if cur.Status.Phase != v1alpha1.PhaseFailed || !v1alpha1.RetryRequested(&cur) ||
+			v1alpha1.RetryTarget(&cur) != v1alpha1.PhaseQueued {
+			return nil
+		}
+		if err := v1alpha1.SetPhase(&cur, v1alpha1.PhaseQueued, r.now()); err != nil {
+			return err
+		}
+		meta.SetStatusCondition(&cur.Status.Conditions, metav1.Condition{
+			Type:               v1alpha1.ConditionRetried,
+			Status:             metav1.ConditionTrue,
+			Reason:             "RetryRequested",
+			Message:            cur.Spec.Retry.By,
+			ObservedGeneration: cur.Generation,
+		})
+		return r.Status().Update(ctx, &cur)
+	})
+	if err == nil {
+		r.log().LogAttrs(ctx, slog.LevelInfo, "failed finding recovered for retry",
+			slog.String("finding", fnd.Name), slog.String("to", string(v1alpha1.PhaseQueued)))
+	}
+	return err
+}
+
 // spawn ensures the Queued finding has its Pending Remediation child.
 func (r *SpawnerReconciler) spawn(ctx context.Context, fnd *v1alpha1.Finding) error {
 	inv := fnd.Status.Investigation
@@ -114,14 +156,16 @@ func (r *SpawnerReconciler) spawn(ctx context.Context, fnd *v1alpha1.Finding) er
 		return nil // nothing to execute; the phase table prevents this in practice
 	}
 	// Spawn the next attempt only when the latest one is settled: a Pending
-	// child awaiting its scheduler grant must not breed a sibling.
+	// or Running child must not breed a sibling. A settled child (Failed, or
+	// Complete with the finding back in Queued via revival/retry) yields the
+	// next attempt.
 	if latest := fnd.Status.Attempts.Remediation; latest > 0 {
 		var cur v1alpha1.Remediation
 		latestName := fmt.Sprintf("%s-rem-%d", fnd.Name, latest)
 		err := r.Get(ctx, types.NamespacedName{Namespace: fnd.Namespace, Name: latestName}, &cur)
 		switch {
-		case err == nil && cur.Status.Phase != v1alpha1.RunFailed:
-			return nil // in flight (Pending/Running) or already succeeded
+		case err == nil && cur.Status.Phase != v1alpha1.RunFailed && cur.Status.Phase != v1alpha1.RunComplete:
+			return nil // in flight ("", Pending, Running)
 		case err != nil && !kerrors.IsNotFound(err):
 			return err
 		}

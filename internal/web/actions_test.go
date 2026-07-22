@@ -66,19 +66,50 @@ func getFinding(t *testing.T, c client.Client, name string) *v1alpha1.Finding {
 	return &f
 }
 
+// actionCase is one action-handler scenario runActionCases drives.
+type actionCase struct {
+	name       string
+	finding    *v1alpha1.Finding
+	verb       string
+	wantStatus int
+	wantBody   string
+	check      func(t *testing.T, f *v1alpha1.Finding)
+}
+
+// runActionCases drives each case through the full handler stack as a fully
+// granted operator.
+func runActionCases(t *testing.T, cases []actionCase) {
+	t.Helper()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testServer(t, tc.finding)
+			s.auth, s.granter = stubAuth{id: operator}, stubGranter{grants: allGrants()}
+			res, body := postAction(t, s, tc.finding.Name, tc.verb)
+			if res.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d (%s), want %d", res.StatusCode, body, tc.wantStatus)
+			}
+			if tc.wantBody != "" && body != tc.wantBody {
+				t.Errorf("body = %q, want %q", body, tc.wantBody)
+			}
+			if tc.wantStatus == http.StatusOK {
+				var v map[string]any
+				if err := json.Unmarshal([]byte(body), &v); err != nil {
+					t.Errorf("success body %q is not JSON: %v", body, err)
+				}
+			}
+			if tc.check != nil {
+				tc.check(t, getFinding(t, mustClient(s), tc.finding.Name))
+			}
+		})
+	}
+}
+
 func TestHandleAction(t *testing.T) {
 	staleAt := metav1.NewTime(testClock.Add(-2 * time.Hour))
 	doneAt := metav1.NewTime(testClock.Add(-time.Hour))
 	freshAt := metav1.NewTime(testClock.Add(-30 * time.Minute))
 
-	cases := []struct {
-		name       string
-		finding    *v1alpha1.Finding
-		verb       string
-		wantStatus int
-		wantBody   string
-		check      func(t *testing.T, f *v1alpha1.Finding)
-	}{
+	cases := []actionCase{
 		{
 			name:       "approve awaiting approval",
 			finding:    actionFinding(v1alpha1.PhaseAwaitingApproval),
@@ -181,28 +212,131 @@ func TestHandleAction(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			s := testServer(t, tc.finding)
-			s.auth, s.granter = stubAuth{id: operator}, stubGranter{grants: allGrants()}
-			res, body := postAction(t, s, tc.finding.Name, tc.verb)
-			if res.StatusCode != tc.wantStatus {
-				t.Fatalf("status = %d (%s), want %d", res.StatusCode, body, tc.wantStatus)
-			}
-			if tc.wantBody != "" && body != tc.wantBody {
-				t.Errorf("body = %q, want %q", body, tc.wantBody)
-			}
-			if tc.wantStatus == http.StatusOK {
-				var v map[string]any
-				if err := json.Unmarshal([]byte(body), &v); err != nil {
-					t.Errorf("success body %q is not JSON: %v", body, err)
+	runActionCases(t, cases)
+}
+
+func TestHandleActionRetryExpedite(t *testing.T) {
+	staleAt := metav1.NewTime(testClock.Add(-2 * time.Hour))
+	doneAt := metav1.NewTime(testClock.Add(-time.Hour))
+	freshAt := metav1.NewTime(testClock.Add(-30 * time.Minute))
+
+	cases := []actionCase{
+		{
+			name: "retry failed finding",
+			finding: actionFinding(v1alpha1.PhaseFailed, func(f *v1alpha1.Finding) {
+				f.Status.CompletedAt = &doneAt
+				f.Status.PhaseTimes = []v1alpha1.PhaseTime{
+					{Phase: v1alpha1.PhaseInvestigating, At: doneAt},
+					{Phase: v1alpha1.PhaseFailed, At: doneAt},
 				}
-			}
-			if tc.check != nil {
-				tc.check(t, getFinding(t, mustClient(s), tc.finding.Name))
-			}
-		})
+			}),
+			verb:       "retry",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Retry == nil || f.Spec.Retry.By != "op@acme.test" {
+					t.Errorf("retry = %+v", f.Spec.Retry)
+				}
+				// The phase edge belongs to the consuming controller.
+				if f.Status.Phase != v1alpha1.PhaseFailed {
+					t.Errorf("phase moved to %q", f.Status.Phase)
+				}
+			},
+		},
+		{
+			name: "retry keeps a pending request",
+			finding: actionFinding(v1alpha1.PhaseFailed, func(f *v1alpha1.Finding) {
+				f.Status.CompletedAt = &doneAt
+				f.Status.PhaseTimes = []v1alpha1.PhaseTime{
+					{Phase: v1alpha1.PhaseRemediating, At: doneAt},
+					{Phase: v1alpha1.PhaseFailed, At: doneAt},
+				}
+				f.Spec.Retry = &v1alpha1.ActionRequest{By: "old", At: freshAt}
+			}),
+			verb:       "retry",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Retry.By != "old" {
+					t.Errorf("retry.by = %q, want pending request kept", f.Spec.Retry.By)
+				}
+			},
+		},
+		{
+			name: "retry replaces a consumed request after a new failure",
+			finding: actionFinding(v1alpha1.PhaseFailed, func(f *v1alpha1.Finding) {
+				f.Status.CompletedAt = &doneAt
+				f.Status.PhaseTimes = []v1alpha1.PhaseTime{
+					{Phase: v1alpha1.PhaseInvestigating, At: staleAt},
+					{Phase: v1alpha1.PhaseFailed, At: staleAt},
+					{Phase: v1alpha1.PhaseEnhanced, At: staleAt},
+					{Phase: v1alpha1.PhaseInvestigating, At: staleAt},
+					{Phase: v1alpha1.PhaseFailed, At: doneAt},
+				}
+				f.Spec.Retry = &v1alpha1.ActionRequest{By: "old", At: staleAt}
+			}),
+			verb:       "retry",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Retry.By != "op@acme.test" {
+					t.Errorf("retry.by = %q, want replacement", f.Spec.Retry.By)
+				}
+			},
+		},
+		{
+			name:       "retry outside failed",
+			finding:    actionFinding(v1alpha1.PhaseQueued),
+			verb:       "retry",
+			wantStatus: http.StatusForbidden,
+			wantBody:   "Action retry is not available for finding fnd-1 (phase Queued).",
+		},
+		{
+			name: "retry failed without retryable history",
+			finding: actionFinding(v1alpha1.PhaseFailed, func(f *v1alpha1.Finding) {
+				f.Status.CompletedAt = &doneAt
+			}),
+			verb:       "retry",
+			wantStatus: http.StatusForbidden,
+			wantBody:   "Action retry is not available for finding fnd-1 (phase Failed).",
+		},
+		{
+			name:       "expedite queued",
+			finding:    actionFinding(v1alpha1.PhaseQueued),
+			verb:       "expedite",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Expedite == nil || f.Spec.Expedite.By != "op@acme.test" {
+					t.Errorf("expedite = %+v", f.Spec.Expedite)
+				}
+			},
+		},
+		{
+			name: "expedite already expedited is a no-op",
+			finding: actionFinding(v1alpha1.PhaseOpened, func(f *v1alpha1.Finding) {
+				f.Spec.Expedite = &v1alpha1.ActionRequest{By: "old", At: staleAt}
+			}),
+			verb:       "expedite",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, f *v1alpha1.Finding) {
+				if f.Spec.Expedite.By != "old" {
+					t.Errorf("expedite.by = %q, want first request kept", f.Spec.Expedite.By)
+				}
+			},
+		},
+		{
+			name:       "expedite in-flight remediation",
+			finding:    actionFinding(v1alpha1.PhaseRemediating),
+			verb:       "expedite",
+			wantStatus: http.StatusForbidden,
+			wantBody:   "Action expedite is not available for finding fnd-1 (phase Remediating).",
+		},
+		{
+			name:       "expedite terminal",
+			finding:    actionFinding(v1alpha1.PhaseDismissed),
+			verb:       "expedite",
+			wantStatus: http.StatusForbidden,
+			wantBody:   "Action expedite is not available for finding fnd-1 (phase Dismissed).",
+		},
 	}
+	runActionCases(t, cases)
 }
 
 func TestHandleActionAuth(t *testing.T) {

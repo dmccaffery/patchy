@@ -44,7 +44,7 @@ export type Recommendation = "remediate" | "ignore" | "manual";
 // ActionVerb is a user action on a finding. The server resolves which verbs
 // the requesting user may invoke (per-finding, from their authorization) and
 // injects them as Finding.userActions; the UI never decides authorization.
-export type ActionVerb = "approve" | "suspend" | "resume";
+export type ActionVerb = "approve" | "retry" | "expedite" | "suspend" | "resume";
 
 export interface Location {
   path: string;
@@ -75,6 +75,12 @@ export interface Approval {
   by: string;
   at: string;
   note?: string;
+}
+
+// ActionRequest is a recorded human retry/expedite request.
+export interface ActionRequest {
+  by: string;
+  at: string;
 }
 
 export interface PhaseTime {
@@ -153,6 +159,8 @@ export interface Finding {
   related?: RelatedFinding[];
   suspend?: boolean;
   approval?: Approval;
+  retry?: ActionRequest;
+  expedite?: ActionRequest;
   // status
   phase?: Phase;
   phaseTimes?: PhaseTime[];

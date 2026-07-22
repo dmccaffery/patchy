@@ -191,6 +191,82 @@ func TestGateNoForgeStaysEnhanced(t *testing.T) {
 	}
 }
 
+func TestGateExpediteSkipsWindowAndAge(t *testing.T) {
+	fnd := enhancedFinding()
+	fnd.Status.Conditions = nil // window still open
+	recent := metav1.NewTime(clock.Add(-10 * time.Minute))
+	fnd.Status.FirstObservedAt = &recent // under MinAge
+	fnd.Spec.Expedite = &v1alpha1.ActionRequest{By: "dev", At: metav1.NewTime(clock)}
+	r, c := newGate(t, fnd, testForge())
+	res := gateOnce(t, r)
+	if res.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want none (gates skipped)", res.RequeueAfter)
+	}
+	// The gate proceeded past both waits: the Repository request exists.
+	var repo v1alpha1.Repository
+	if err := c.Get(t.Context(), types.NamespacedName{Namespace: "patchy", Name: fndName + "-src"}, &repo); err != nil {
+		t.Fatalf("Repository not created for expedited finding: %v", err)
+	}
+}
+
+// failedInvestigationFinding failed out of Investigating with a fresh retry.
+func failedInvestigationFinding(retryAt time.Time) *v1alpha1.Finding {
+	fnd := enhancedFinding()
+	failedAt := metav1.NewTime(clock.Add(-time.Hour))
+	fnd.Status.Phase = v1alpha1.PhaseFailed
+	fnd.Status.CompletedAt = &failedAt
+	fnd.Status.PhaseTimes = []v1alpha1.PhaseTime{
+		{Phase: v1alpha1.PhaseOpened, At: failedAt},
+		{Phase: v1alpha1.PhaseEnhanced, At: failedAt},
+		{Phase: v1alpha1.PhaseInvestigating, At: failedAt},
+		{Phase: v1alpha1.PhaseFailed, At: failedAt},
+	}
+	fnd.Spec.Retry = &v1alpha1.ActionRequest{By: "dev", At: metav1.NewTime(retryAt)}
+	return fnd
+}
+
+func TestGateRecoversFailedInvestigationOnRetry(t *testing.T) {
+	r, c := newGate(t, failedInvestigationFinding(clock.Add(-time.Minute)), testForge())
+	gateOnce(t, r)
+	f := getF(t, c)
+	if f.Status.Phase != v1alpha1.PhaseEnhanced {
+		t.Fatalf("phase = %q, want Enhanced after retry", f.Status.Phase)
+	}
+	if f.Status.CompletedAt != nil {
+		t.Errorf("completedAt = %v, want cleared on recovery", f.Status.CompletedAt)
+	}
+	cond := meta.FindStatusCondition(f.Status.Conditions, v1alpha1.ConditionRetried)
+	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Message != "dev" {
+		t.Errorf("Retried condition = %+v, want True by dev", cond)
+	}
+}
+
+func TestGateIgnoresStaleRetry(t *testing.T) {
+	// The retry predates the failure — it was consumed by an earlier
+	// recovery and must not re-fire.
+	r, c := newGate(t, failedInvestigationFinding(clock.Add(-2*time.Hour)), testForge())
+	gateOnce(t, r)
+	if got := getF(t, c).Status.Phase; got != v1alpha1.PhaseFailed {
+		t.Errorf("phase = %q, want Failed (stale retry ignored)", got)
+	}
+}
+
+func TestGateIgnoresRetryForRemediationFailure(t *testing.T) {
+	// A finding that failed out of Remediating recovers to Queued — that
+	// edge belongs to remediation-controller, not the gate.
+	fnd := failedInvestigationFinding(clock.Add(-time.Minute))
+	fnd.Status.PhaseTimes = append(fnd.Status.PhaseTimes,
+		v1alpha1.PhaseTime{Phase: v1alpha1.PhaseQueued, At: *fnd.Status.CompletedAt},
+		v1alpha1.PhaseTime{Phase: v1alpha1.PhaseRemediating, At: *fnd.Status.CompletedAt},
+		v1alpha1.PhaseTime{Phase: v1alpha1.PhaseFailed, At: *fnd.Status.CompletedAt},
+	)
+	r, c := newGate(t, fnd, testForge())
+	gateOnce(t, r)
+	if got := getF(t, c).Status.Phase; got != v1alpha1.PhaseFailed {
+		t.Errorf("phase = %q, want Failed (not the gate's edge)", got)
+	}
+}
+
 // fakeRunner is the jobs seam.
 type fakeRunner struct {
 	created []jobs.Spec

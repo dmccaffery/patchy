@@ -43,6 +43,15 @@ func TestPick(t *testing.T) {
 			cand("fresh-max", 100, 0),
 			cand("ancient-low", 70, 300*24*time.Hour), // capped at +25 => 95
 		}, 1, []string{"fresh-max"}},
+		{"expedited outranks max priority and aging", []Candidate{
+			cand("fresh-max", 100, 0),
+			cand("ancient-high", 90, 300*24*time.Hour),
+			{Name: "expedited-low", Priority: 5, QueuedAt: t0, Expedited: true},
+		}, 2, []string{"expedited-low", "ancient-high"}},
+		{"expedited order among themselves by priority", []Candidate{
+			{Name: "exp-low", Priority: 10, QueuedAt: t0, Expedited: true},
+			{Name: "exp-high", Priority: 80, QueuedAt: t0, Expedited: true},
+		}, 1, []string{"exp-high"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

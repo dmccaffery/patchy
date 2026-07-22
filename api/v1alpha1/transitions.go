@@ -42,8 +42,11 @@ const (
 //   - investigation-controller: Enhanced→Investigating (child create is the
 //     lease), Investigating→Enhanced (retry revert), and the verdict routing
 //     Investigating→{Queued, AwaitingApproval, Dismissed, HandedOff, Failed}.
+//   - investigation-controller (gate): Failed→Enhanced (human retry of a
+//     failed investigation).
 //   - remediation-controller: AwaitingApproval→Queued and HandedOff→Queued
-//     (approval/revival), Queued→Remediating (scheduler grant),
+//     (approval/revival), Failed→Queued (human retry of a failed
+//     remediation/review), Queued→Remediating (scheduler grant),
 //     Remediating→Queued (retry re-queue), Remediating→{InReview, HandedOff,
 //     Failed}.
 var transitions = map[Phase][]Phase{
@@ -59,9 +62,9 @@ var transitions = map[Phase][]Phase{
 	PhaseRemediating:      {PhaseQueued, PhaseInReview, PhaseHandedOff, PhaseFailed},
 	PhaseInReview:         {PhaseRemediated, PhaseFailed, PhaseHandedOff},
 	PhaseRemediated:       nil,
-	PhaseFailed:           nil,
-	PhaseDismissed:        {PhaseHandedOff}, // human reopened the tracking issue
-	PhaseHandedOff:        {PhaseQueued},    // revival via /approve
+	PhaseFailed:           {PhaseEnhanced, PhaseQueued}, // human retry (see RetryTarget)
+	PhaseDismissed:        {PhaseHandedOff},             // human reopened the tracking issue
+	PhaseHandedOff:        {PhaseQueued},                // revival via /approve
 }
 
 // terminal is the set of phases that complete a Finding for TTL purposes
@@ -86,9 +89,48 @@ func CanTransition(from, to Phase) bool {
 }
 
 // Terminal reports whether the phase completes a Finding (starts its TTL).
-// Dismissed and HandedOff are terminal but revivable.
+// Dismissed, HandedOff, and Failed are terminal but revivable.
 func Terminal(p Phase) bool {
 	return terminal[p]
+}
+
+// RetryTarget returns the phase a Failed finding recovers to when a human
+// retries it — the recoverable state immediately before the failure — or ""
+// when the finding is not Failed or its history holds no retryable phase.
+// The failed stage is re-attempted by the normal machinery from there: the
+// investigation gate opens a fresh attempt from Enhanced, the remediation
+// spawner from Queued.
+func RetryTarget(f *Finding) Phase {
+	if f.Status.Phase != PhaseFailed {
+		return ""
+	}
+	prior := Phase("")
+	for _, pt := range f.Status.PhaseTimes {
+		if pt.Phase == PhaseFailed {
+			continue // the entry (or an earlier failure) itself
+		}
+		prior = pt.Phase
+	}
+	switch prior {
+	case PhaseInvestigating:
+		return PhaseEnhanced
+	case PhaseRemediating, PhaseInReview:
+		return PhaseQueued
+	}
+	return ""
+}
+
+// RetryRequested reports whether spec.retry is actionable: present and newer
+// than the failure's completion. A retry consumed by a transition (which
+// clears completedAt) can never re-fire — a later failure stamps a fresh
+// completedAt that outdates it.
+func RetryRequested(f *Finding) bool {
+	r := f.Spec.Retry
+	if r == nil {
+		return false
+	}
+	done := f.Status.CompletedAt
+	return done == nil || r.At.After(done.Time)
 }
 
 // SetPhase moves the Finding to phase `to` at time `now`: it validates the

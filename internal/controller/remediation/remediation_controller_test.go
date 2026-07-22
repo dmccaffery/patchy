@@ -173,6 +173,95 @@ func TestSpawnerIgnoresStaleApprovalOnHandedOff(t *testing.T) {
 	}
 }
 
+// failedRemediationFinding failed out of Remediating with a retry request.
+func failedRemediationFinding(retryAt time.Time) *v1alpha1.Finding {
+	fnd := queuedFinding(v1alpha1.PhaseFailed)
+	failedAt := metav1.NewTime(crdClock.Add(-time.Hour))
+	fnd.Status.CompletedAt = &failedAt
+	fnd.Status.Attempts.Remediation = 1
+	fnd.Status.PhaseTimes = []v1alpha1.PhaseTime{
+		{Phase: v1alpha1.PhaseQueued, At: failedAt},
+		{Phase: v1alpha1.PhaseRemediating, At: failedAt},
+		{Phase: v1alpha1.PhaseFailed, At: failedAt},
+	}
+	fnd.Spec.Retry = &v1alpha1.ActionRequest{By: "dev", At: metav1.NewTime(retryAt)}
+	return fnd
+}
+
+func TestSpawnerRecoversFailedRemediationOnRetry(t *testing.T) {
+	failedChild := &v1alpha1.Remediation{
+		ObjectMeta: metav1.ObjectMeta{Name: "finding-aa-1-rem-1", Namespace: "patchy"},
+		Spec: v1alpha1.RemediationSpec{
+			FindingRef: v1alpha1.ObjectReference{Name: "finding-aa-1", UID: "uid-1"}, Attempt: 1,
+		},
+		Status: v1alpha1.RemediationStatus{Phase: v1alpha1.RunFailed},
+	}
+	r, c := newSpawner(t, failedRemediationFinding(crdClock.Add(-time.Minute)), invChild(), failedChild)
+	spawnOnce(t, r)
+	f := findingNow(t, c)
+	if f.Status.Phase != v1alpha1.PhaseQueued {
+		t.Fatalf("phase = %q, want Queued after retry", f.Status.Phase)
+	}
+	if f.Status.CompletedAt != nil {
+		t.Error("completedAt not cleared on retry — TTL would still fire")
+	}
+
+	// The Queued reconcile then spawns the next attempt.
+	spawnOnce(t, r)
+	var rem v1alpha1.Remediation
+	key := types.NamespacedName{Namespace: "patchy", Name: "finding-aa-1-rem-2"}
+	if err := c.Get(t.Context(), key, &rem); err != nil {
+		t.Fatalf("attempt 2 not spawned after retry: %v", err)
+	}
+}
+
+func TestSpawnerIgnoresStaleRetry(t *testing.T) {
+	r, c := newSpawner(t, failedRemediationFinding(crdClock.Add(-2*time.Hour)), invChild())
+	spawnOnce(t, r)
+	if got := findingNow(t, c).Status.Phase; got != v1alpha1.PhaseFailed {
+		t.Errorf("phase = %q, want Failed (stale retry predates failure)", got)
+	}
+}
+
+func TestSpawnerIgnoresRetryForInvestigationFailure(t *testing.T) {
+	// Failed out of Investigating → recovery to Enhanced belongs to the
+	// investigation gate, not this spawner.
+	fnd := failedRemediationFinding(crdClock.Add(-time.Minute))
+	failedAt := *fnd.Status.CompletedAt
+	fnd.Status.PhaseTimes = []v1alpha1.PhaseTime{
+		{Phase: v1alpha1.PhaseEnhanced, At: failedAt},
+		{Phase: v1alpha1.PhaseInvestigating, At: failedAt},
+		{Phase: v1alpha1.PhaseFailed, At: failedAt},
+	}
+	r, c := newSpawner(t, fnd, invChild())
+	spawnOnce(t, r)
+	if got := findingNow(t, c).Status.Phase; got != v1alpha1.PhaseFailed {
+		t.Errorf("phase = %q, want Failed (not the spawner's edge)", got)
+	}
+}
+
+func TestSpawnerRespawnsAfterSettledCompleteChild(t *testing.T) {
+	// A revived/retried finding whose last attempt Completed (e.g. its PR
+	// was closed unmerged) must get a fresh attempt — Complete is settled,
+	// not in-flight.
+	fnd := queuedFinding(v1alpha1.PhaseQueued)
+	fnd.Status.Attempts.Remediation = 1
+	completeChild := &v1alpha1.Remediation{
+		ObjectMeta: metav1.ObjectMeta{Name: "finding-aa-1-rem-1", Namespace: "patchy"},
+		Spec: v1alpha1.RemediationSpec{
+			FindingRef: v1alpha1.ObjectReference{Name: "finding-aa-1", UID: "uid-1"}, Attempt: 1,
+		},
+		Status: v1alpha1.RemediationStatus{Phase: v1alpha1.RunComplete, Success: true},
+	}
+	r, c := newSpawner(t, fnd, invChild(), completeChild)
+	spawnOnce(t, r)
+	var rem v1alpha1.Remediation
+	key := types.NamespacedName{Namespace: "patchy", Name: "finding-aa-1-rem-2"}
+	if err := c.Get(t.Context(), key, &rem); err != nil {
+		t.Fatalf("attempt 2 not spawned after settled Complete child: %v", err)
+	}
+}
+
 // fakeCRRunner fakes the jobs seam.
 type fakeCRRunner struct {
 	created []jobs.Spec
@@ -417,6 +506,42 @@ func TestRemediationSchedulerPriorityOrder(t *testing.T) {
 	}
 	if low.Status.Phase == v1alpha1.RunRunning {
 		t.Error("low-priority granted despite MaxConcurrent=1")
+	}
+}
+
+func TestRemediationSchedulerExpeditedJumpsQueue(t *testing.T) {
+	mk := func(name, finding string, prio int32) *v1alpha1.Remediation {
+		return &v1alpha1.Remediation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: "patchy",
+				CreationTimestamp: metav1.NewTime(crdClock),
+			},
+			Spec: v1alpha1.RemediationSpec{
+				FindingRef:       v1alpha1.ObjectReference{Name: finding},
+				InvestigationRef: v1alpha1.ObjectReference{Name: "i"},
+				RepositoryRef:    v1alpha1.LocalObjectReference{Name: "s"},
+				Attempt:          1, Priority: prio,
+			},
+		}
+	}
+	expedited := queuedFinding(v1alpha1.PhaseQueued)
+	expedited.Name = "finding-exp"
+	expedited.Spec.Expedite = &v1alpha1.ActionRequest{By: "dev", At: metav1.NewTime(crdClock)}
+	runner := &fakeCRRunner{}
+	r, c := newRemediation(t, runner, &fakeForge{},
+		expedited, mk("rem-low", "finding-exp", 10), mk("rem-high", "other", 90))
+	if _, err := r.Reconcile(t.Context(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: "patchy", Name: remSchedulerRequest},
+	}); err != nil {
+		t.Fatalf("schedule: %v", err)
+	}
+
+	var low v1alpha1.Remediation
+	if err := c.Get(t.Context(), types.NamespacedName{Namespace: "patchy", Name: "rem-low"}, &low); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if low.Status.Phase != v1alpha1.RunRunning {
+		t.Errorf("expedited low-priority phase = %q, want Running (jumps the queue)", low.Status.Phase)
 	}
 }
 

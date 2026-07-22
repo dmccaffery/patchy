@@ -6,6 +6,8 @@ package v1alpha1
 import (
 	"testing"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestCanTransition(t *testing.T) {
@@ -40,7 +42,10 @@ func TestCanTransition(t *testing.T) {
 		{"human closes issue in review", PhaseInReview, PhaseHandedOff, true},
 		{"human closes issue while queued", PhaseQueued, PhaseHandedOff, true},
 		{"remediated is terminal", PhaseRemediated, PhaseHandedOff, false},
-		{"failed is terminal", PhaseFailed, PhaseQueued, false},
+		{"failed retries to enhanced", PhaseFailed, PhaseEnhanced, true},
+		{"failed retries to queued", PhaseFailed, PhaseQueued, true},
+		{"failed cannot re-run directly", PhaseFailed, PhaseInvestigating, false},
+		{"failed cannot hand off", PhaseFailed, PhaseHandedOff, false},
 		{"dismissed revives on reopen", PhaseDismissed, PhaseHandedOff, true},
 		{"dismissed cannot re-queue directly", PhaseDismissed, PhaseQueued, false},
 		{"handed off revives to the queue", PhaseHandedOff, PhaseQueued, true},
@@ -155,6 +160,75 @@ func TestSetPhase(t *testing.T) {
 			t.Errorf("phaseTimes = %v, want two entries", f.Status.PhaseTimes)
 		}
 	})
+}
+
+func TestRetryTarget(t *testing.T) {
+	at := metav1.NewTime(time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC))
+	history := func(phases ...Phase) []PhaseTime {
+		out := make([]PhaseTime, 0, len(phases))
+		for _, p := range phases {
+			out = append(out, PhaseTime{Phase: p, At: at})
+		}
+		return out
+	}
+	cases := []struct {
+		name  string
+		phase Phase
+		times []PhaseTime
+		want  Phase
+	}{
+		{"failed investigation recovers to enhanced", PhaseFailed,
+			history(PhaseOpened, PhaseEnhanced, PhaseInvestigating, PhaseFailed), PhaseEnhanced},
+		{"failed remediation recovers to queued", PhaseFailed,
+			history(PhaseQueued, PhaseRemediating, PhaseFailed), PhaseQueued},
+		{"closed pr recovers to queued", PhaseFailed,
+			history(PhaseRemediating, PhaseInReview, PhaseFailed), PhaseQueued},
+		{"repeated failures use the latest pre-failure phase", PhaseFailed,
+			history(PhaseInvestigating, PhaseFailed, PhaseEnhanced, PhaseInvestigating,
+				PhaseQueued, PhaseRemediating, PhaseFailed), PhaseQueued},
+		{"not failed", PhaseInvestigating, history(PhaseInvestigating), ""},
+		{"no history", PhaseFailed, nil, ""},
+		{"unretryable prior phase", PhaseFailed, history(PhaseOpened, PhaseFailed), ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := &Finding{}
+			f.Status.Phase = c.phase
+			f.Status.PhaseTimes = c.times
+			if got := RetryTarget(f); got != c.want {
+				t.Errorf("RetryTarget() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestRetryRequested(t *testing.T) {
+	base := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	completed := metav1.NewTime(base)
+	fresh := metav1.NewTime(base.Add(time.Minute))
+	stale := metav1.NewTime(base.Add(-time.Minute))
+
+	cases := []struct {
+		name      string
+		retry     *ActionRequest
+		completed *metav1.Time
+		want      bool
+	}{
+		{"no retry", nil, &completed, false},
+		{"fresh retry", &ActionRequest{By: "u", At: fresh}, &completed, true},
+		{"stale retry after a newer failure", &ActionRequest{By: "u", At: stale}, &completed, false},
+		{"no completion recorded", &ActionRequest{By: "u", At: stale}, nil, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := &Finding{}
+			f.Spec.Retry = c.retry
+			f.Status.CompletedAt = c.completed
+			if got := RetryRequested(f); got != c.want {
+				t.Errorf("RetryRequested() = %v, want %v", got, c.want)
+			}
+		})
+	}
 }
 
 // TestEveryEdgeReachable pins the shape of the table itself: every phase in

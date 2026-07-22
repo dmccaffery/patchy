@@ -9,6 +9,8 @@ import { Icon, type IconName } from "./icons";
 
 const VERB_META: Record<ActionVerb, { label: string; icon: IconName; primary: boolean }> = {
   approve: { label: "Approve", icon: "check", primary: true },
+  retry: { label: "Retry", icon: "rotateCcw", primary: true },
+  expedite: { label: "Expedite", icon: "zap", primary: false },
   suspend: { label: "Suspend", icon: "pause", primary: false },
   resume: { label: "Resume", icon: "play", primary: false },
 };

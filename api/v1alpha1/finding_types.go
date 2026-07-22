@@ -104,6 +104,16 @@ type Approval struct {
 	Note string `json:"note,omitempty"`
 }
 
+// ActionRequest records who requested a human action (retry, expedite) and
+// when. Freshness against status timestamps decides whether the request is
+// still actionable — the consuming controller never clears spec.
+type ActionRequest struct {
+	// By is the requesting login.
+	By string `json:"by"`
+	// At is when the request was received.
+	At metav1.Time `json:"at"`
+}
+
 // FindingSpec is the finding to triage. integration-controller writes it at
 // ingest and during accumulation; humans may set suspend and add related-to
 // edges — nothing else has a second writer.
@@ -157,6 +167,18 @@ type FindingSpec struct {
 	// integration-controller from the tracking system's comment webhook.
 	// +optional
 	Approval *Approval `json:"approval,omitempty"`
+	// Retry requests recovery of a Failed finding back to the state it
+	// failed from (human-written). Actionable while newer than
+	// status.completedAt; the phase-owning controller consumes it by
+	// performing the transition.
+	// +optional
+	Retry *ActionRequest `json:"retry,omitempty"`
+	// Expedite marks the finding urgent for its whole lifetime
+	// (human-written): the investigation gate skips the accumulation window
+	// and minimum age, and both schedulers rank the finding's runs ahead of
+	// all non-expedited work.
+	// +optional
+	Expedite *ActionRequest `json:"expedite,omitempty"`
 }
 
 // PhaseTime records when the finding entered a phase (append-only).

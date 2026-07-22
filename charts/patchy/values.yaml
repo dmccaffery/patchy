@@ -294,10 +294,10 @@ remediationController:
 
 # ---- status-server ----------------------------------------------------------
 # The human-facing status page (templates/status-server.yaml): the findings
-# board/detail with the approve/suspend/resume actions, and the rollup
+# board/detail with the approve/retry/expedite/suspend/resume actions, and the rollup
 # statistics. Rollups are PUBLIC by design; the findings surface always
 # requires authentication (auth below) plus per-user RBAC — native `get` on
-# findings to view, and the custom verbs approve/suspend/resume for the
+# findings to view, and the custom verbs approve/retry/expedite/suspend/resume for the
 # action buttons (rbac.userRoles renders example roles).
 statusServer:
     # The whole feature: disabling renders none of its resources.

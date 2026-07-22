@@ -10,10 +10,15 @@
 # kubeconfig and never talk to the API server themselves):
 #
 #   * viewing findings   — native `get` on findings
-#   * the action buttons — the CUSTOM verbs approve / suspend / resume on
-#                          findings.patchy.bitwisemedia.uk. Custom verbs are
-#                          plain strings to RBAC; nothing else consumes them,
-#                          so granting one confers exactly one button.
+#   * the action buttons — the CUSTOM verbs approve / retry / expedite /
+#                          suspend / resume on findings.patchy.bitwisemedia.uk.
+#                          Custom verbs are plain strings to RBAC; nothing
+#                          else consumes them, so granting one confers exactly
+#                          one button. approve releases holds and revives
+#                          handed-off findings; retry recovers a Failed
+#                          finding to the state it failed from; expedite skips
+#                          the waiting stages (accumulation window, minimum
+#                          age, queue position).
 #
 # Rollup statistics are public by design and need no grant.
 #
@@ -49,7 +54,7 @@ rules:
       resources: [findings]
       verbs: [approve]
 ---
-# Viewer + every action: approve, suspend, resume.
+# Viewer + every action: approve, retry, expedite, suspend, resume.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -62,7 +67,7 @@ rules:
       verbs: [get, list]
     - apiGroups: [patchy.bitwisemedia.uk]
       resources: [findings]
-      verbs: [approve, suspend, resume]
+      verbs: [approve, retry, expedite, suspend, resume]
 ---
 # Example bindings: an SSO group of operators, one individual approver.
 apiVersion: rbac.authorization.k8s.io/v1
