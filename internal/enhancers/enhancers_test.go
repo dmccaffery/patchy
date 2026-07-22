@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/bitwise-media-group/patchy/pkg/enhance"
@@ -35,6 +34,8 @@ repos:
         attributes:
             system: storefront
             tier: "1"
+        markdown: |
+            Storefront is PCI-scoped.
     acme/api: {}
 `
 
@@ -63,12 +64,12 @@ func TestStaticFile(t *testing.T) {
 		if want := []string{"octocat", "hubot"}; !slices.Equal(enr.Owners, want) {
 			t.Errorf("Owners = %v, want %v", enr.Owners, want)
 		}
-		for _, want := range []string{"@octocat", "@hubot", "**system:** storefront", "**tier:** 1"} {
-			if !strings.Contains(enr.CommentMarkdown, want) {
-				t.Errorf("markdown missing %q:\n%s", want, enr.CommentMarkdown)
-			}
+		// Markdown carries only the free-form entry content; owners and
+		// attributes stay structured.
+		if want := "Storefront is PCI-scoped."; enr.CommentMarkdown != want {
+			t.Errorf("CommentMarkdown = %q, want %q", enr.CommentMarkdown, want)
 		}
-		if enr.Attributes["system"] != "storefront" {
+		if enr.Attributes["system"] != "storefront" || enr.Attributes["tier"] != "1" {
 			t.Errorf("Attributes = %v", enr.Attributes)
 		}
 	})

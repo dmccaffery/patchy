@@ -70,10 +70,11 @@ func (r *FindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		if len(enrichments) < 8 {
 			enrichments = append(enrichments, v1alpha1.Enrichment{
-				Enhancer:  e.ID(),
-				Owners:    enr.Owners,
-				Markdown:  truncate(enr.CommentMarkdown, maxEnrichmentMarkdown),
-				AppliedAt: metav1.NewTime(r.now()),
+				Enhancer:   e.ID(),
+				Owners:     enr.Owners,
+				Attributes: enr.Attributes,
+				Markdown:   truncate(enr.CommentMarkdown, maxEnrichmentMarkdown),
+				AppliedAt:  metav1.NewTime(r.now()),
 			})
 		}
 		for _, o := range enr.Owners {

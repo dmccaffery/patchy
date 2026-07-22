@@ -23,11 +23,12 @@ type Enrichment struct {
 	// Owners are GitHub logins responsible for the affected repository, in
 	// preference order; the pipeline uses them for issue assignment.
 	Owners []string
-	// CommentMarkdown is posted to the issue as a separate comment. Empty
-	// means no comment.
+	// CommentMarkdown is arbitrary content, kept as one sticky comment per
+	// enhancer on the tracking issue. Empty means no comment. Semi-structured
+	// facts belong in Attributes, not here.
 	CommentMarkdown string
-	// Attributes are additional structured facts (system name, environment,
-	// tier). Reserved for future label/field mapping; carried verbatim.
+	// Attributes are semi-structured facts (system name, environment, tier),
+	// projected as tracking labels; carried verbatim.
 	Attributes map[string]string
 }
 

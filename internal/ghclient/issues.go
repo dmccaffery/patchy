@@ -72,6 +72,15 @@ func (c *Client) Comment(ctx context.Context, repo Repo, number int, body string
 	return nil
 }
 
+// EditComment replaces the body of an existing issue comment.
+func (c *Client) EditComment(ctx context.Context, repo Repo, commentID int64, body string) error {
+	comment := &github.IssueComment{Body: github.Ptr(body)}
+	if _, _, err := c.gh.Issues.EditComment(ctx, repo.Owner, repo.Name, commentID, comment); err != nil {
+		return fmt.Errorf("ghclient: edit comment %d on %s: %w", commentID, repo, err)
+	}
+	return nil
+}
+
 // ListComments returns every comment on the issue, following pagination.
 func (c *Client) ListComments(ctx context.Context, repo Repo, number int) ([]*Comment, error) {
 	opts := &github.IssueListCommentsOptions{ListOptions: github.ListOptions{PerPage: listPageSize}}

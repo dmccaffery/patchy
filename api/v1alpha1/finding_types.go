@@ -213,7 +213,12 @@ type Enrichment struct {
 	// order.
 	// +optional
 	Owners []string `json:"owners,omitempty"`
-	// Markdown is the enhancer's comment body.
+	// Attributes are the enhancer's semi-structured facts (system,
+	// environment, tier), projected as tracking labels.
+	// +optional
+	Attributes map[string]string `json:"attributes,omitempty"`
+	// Markdown is arbitrary enhancer content, projected as a sticky tracking
+	// comment.
 	// +optional
 	// +kubebuilder:validation:MaxLength=16384
 	Markdown string `json:"markdown,omitempty"`

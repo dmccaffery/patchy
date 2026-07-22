@@ -32,8 +32,14 @@ func RenderStageReportComment(stage string, attempt int32, report string) string
 		stage, attempt, stage, attempt, report)
 }
 
-// RenderEnrichmentProjection renders one enhancer enrichment as a
+// EnrichmentMarker heads one enhancer's sticky tracking comment; the
+// projection finds the comment to update in place by this prefix.
+func EnrichmentMarker(enhancer string) string {
+	return fmt.Sprintf("<!-- patchy:enrichment %s -->", enhancer)
+}
+
+// RenderEnrichmentProjection renders one enhancer enrichment as its sticky
 // tracking-issue comment.
 func RenderEnrichmentProjection(e v1alpha1.Enrichment) string {
-	return fmt.Sprintf("<!-- patchy:enrichment %s -->\n%s", e.Enhancer, e.Markdown)
+	return EnrichmentMarker(e.Enhancer) + "\n" + e.Markdown
 }

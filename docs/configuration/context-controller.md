@@ -1,8 +1,9 @@
 # context-controller
 
 Runs the enhancer chain over `Opened` findings: ownership and infrastructure context recorded as enrichments and owners
-on Finding status, then the `Opened → Enhanced` transition. The integration-controller projects the enrichments as issue
-comments — this controller itself has **no GitHub access at all**; it reads and writes Finding resources, nothing else.
+on Finding status, then the `Opened → Enhanced` transition. The integration-controller projects each enrichment's
+attributes as `security-context` issue labels and its markdown as a sticky issue comment — this controller itself has
+**no GitHub access at all**; it reads and writes Finding resources, nothing else.
 
 ```sh
 context-controller serve --namespace patchy --static-context-file /etc/patchy/context/cmdb.yaml
@@ -38,9 +39,11 @@ attributes. Without `--static-context-file` the chain is the explicit no-op enha
 repos:
   acme/payments-api:
     owners: [alice, payments-platform]
-    attributes:
+    attributes: # semi-structured facts → security-context labels
       tier: "1"
       pci: "true"
+    markdown: | # optional free-form content → sticky issue comment
+      Payments API is PCI-scoped; page #payments-oncall before touching auth.
 ```
 
 The dev overlay mounts a sample of exactly this shape from a ConfigMap. Real integrations implement the

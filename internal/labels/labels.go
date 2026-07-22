@@ -52,6 +52,7 @@ const (
 	KeySeverity       = "security-severity"
 	KeyPriority       = "security-priority"
 	KeyRecommendation = "security-recommendation"
+	KeyContext        = "security-context"
 )
 
 // Set is the typed view of one issue's patchy labels. Zero fields render no
@@ -63,6 +64,9 @@ type Set struct {
 	Severity       Level
 	Priority       Level
 	Recommendation Recommendation
+	// Context carries enhancer attributes, one "security-context: k=v" label
+	// per entry.
+	Context map[string]string
 }
 
 // Parse builds a Set from raw GitHub label names. It is tolerant: labels
@@ -90,6 +94,15 @@ func Parse(names []string) Set {
 			s.Priority = Level(value)
 		case KeyRecommendation:
 			s.Recommendation = Recommendation(value)
+		case KeyContext:
+			k, v, ok := strings.Cut(value, "=")
+			if !ok || k == "" {
+				continue
+			}
+			if s.Context == nil {
+				s.Context = map[string]string{}
+			}
+			s.Context[k] = v
 		}
 	}
 	slices.Sort(s.Advisories)
@@ -125,7 +138,26 @@ func (s Set) Render() []string {
 	add(KeySeverity, string(s.Severity))
 	add(KeyPriority, string(s.Priority))
 	add(KeyRecommendation, string(s.Recommendation))
+	for _, k := range sortedKeys(s.Context) {
+		if name := contextName(k, s.Context[k]); name != "" {
+			out = append(out, name)
+		}
+	}
 	return out
+}
+
+// contextName renders one attribute label ("security-context: k=v") within
+// MaxLen by truncating the value; an attribute whose key alone leaves no
+// room for a value is excluded (blind truncation would corrupt the key).
+func contextName(k, v string) string {
+	budget := MaxLen - len(KeyContext) - len(sep) - len(k) - len("=")
+	if budget <= 0 {
+		return ""
+	}
+	if len(v) > budget {
+		v = v[:budget]
+	}
+	return KeyContext + sep + k + "=" + v
 }
 
 // Diff returns the label names to add to and remove from an issue to move it
@@ -148,6 +180,15 @@ func Diff(prev, next Set) (add, remove []string) {
 
 func sorted(s []string) []string {
 	out := slices.Clone(s)
+	slices.Sort(out)
+	return out
+}
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
 	slices.Sort(out)
 	return out
 }

@@ -57,13 +57,14 @@ type Server struct {
 	// the absolute URLs it hands out (the tarball redirect).
 	externalURL string
 
-	mu        sync.Mutex
-	issues    map[int]*Issue
-	comments  map[int][]comment
-	dismissed map[int]string
-	pulls     map[int]*pull
-	git       gitData
-	next      int
+	mu            sync.Mutex
+	issues        map[int]*Issue
+	comments      map[int][]comment
+	nextCommentID int64
+	dismissed     map[int]string
+	pulls         map[int]*pull
+	git           gitData
+	next          int
 	// Now stamps created_at; tests override it to age issues instantly.
 	Now func() time.Time
 }
@@ -172,6 +173,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /repos/{owner}/{repo}/issues/{number}", s.editIssue)
 	mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{number}/comments", s.listComments)
 	mux.HandleFunc("POST /repos/{owner}/{repo}/issues/{number}/comments", s.createComment)
+	mux.HandleFunc("PATCH /repos/{owner}/{repo}/issues/comments/{id}", s.editComment)
 	mux.HandleFunc("POST /repos/{owner}/{repo}/issues/{number}/labels", s.addLabels)
 	mux.HandleFunc("DELETE /repos/{owner}/{repo}/issues/{number}/labels/{name}", s.removeLabel)
 	mux.HandleFunc("POST /repos/{owner}/{repo}/issues/{number}/assignees", s.addAssignees)
@@ -333,12 +335,37 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	c := comment{ID: int64(len(s.comments[number]) + 1), Body: body.Body, User: user{Login: "patchy[bot]"}}
+	s.nextCommentID++
+	c := comment{ID: s.nextCommentID, Body: body.Body, User: user{Login: "patchy[bot]"}}
 	s.comments[number] = append(s.comments[number], c)
 	s.mu.Unlock()
 
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, c)
+}
+
+func (s *Server) editComment(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	var body struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for number, cs := range s.comments {
+		for i, c := range cs {
+			if c.ID == id {
+				s.comments[number][i].Body = body.Body
+				writeJSON(w, s.comments[number][i])
+				return
+			}
+		}
+	}
+	http.NotFound(w, r)
 }
 
 func (s *Server) addLabels(w http.ResponseWriter, r *http.Request) {

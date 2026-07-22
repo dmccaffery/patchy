@@ -414,11 +414,20 @@ spec:
                       description: AppliedAt is when the enrichment was recorded.
                       format: date-time
                       type: string
+                    attributes:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        Attributes are the enhancer's semi-structured facts (system,
+                        environment, tier), projected as tracking labels.
+                      type: object
                     enhancer:
                       description: Enhancer is the enhancer ID.
                       type: string
                     markdown:
-                      description: Markdown is the enhancer's comment body.
+                      description: |-
+                        Markdown is arbitrary enhancer content, projected as a sticky tracking
+                        comment.
                       maxLength: 16384
                       type: string
                     owners:

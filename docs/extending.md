@@ -22,8 +22,9 @@ identifiable repository is legal too: it flows through triage but can never reac
 
 An enhancer adds organisational context to a freshly opened finding — ownership, tier, data classification, associated
 infrastructure — before the investigation decides a route. Enhancers run as a chain in the context-controller; each
-contributes an enrichment recorded on Finding status (and projected as a tracking-issue comment), and a failing enhancer
-logs and continues rather than blocking the pipeline.
+contributes an enrichment recorded on Finding status — semi-structured attributes (projected as `security-context`
+tracking labels) and free-form markdown (projected as a sticky tracking comment, one per enhancer) — and a failing
+enhancer logs and continues rather than blocking the pipeline.
 
 Two implementations ship:
 

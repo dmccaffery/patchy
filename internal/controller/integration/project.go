@@ -33,7 +33,8 @@ import (
 const (
 	// AnnotationProjectedBody is the hash of the last rendered body+labels.
 	AnnotationProjectedBody = "patchy.bitwisemedia.uk/projected-body"
-	// AnnotationProjectedEnrichments counts enrichment comments posted.
+	// AnnotationProjectedEnrichments is the hash of the last projected
+	// enrichment sticky comments.
 	AnnotationProjectedEnrichments = "patchy.bitwisemedia.uk/projected-enrichments"
 	// AnnotationProjectedInvestigation names the Investigation whose report
 	// comment was posted.
@@ -55,6 +56,8 @@ type trackerClient interface {
 	AddLabels(ctx context.Context, repo ghclient.Repo, number int, add []string) error
 	RemoveLabel(ctx context.Context, repo ghclient.Repo, number int, name string) error
 	Comment(ctx context.Context, repo ghclient.Repo, number int, body string) error
+	ListComments(ctx context.Context, repo ghclient.Repo, number int) ([]*ghclient.Comment, error)
+	EditComment(ctx context.Context, repo ghclient.Repo, commentID int64, body string) error
 	Assign(ctx context.Context, repo ghclient.Repo, number int, logins []string) error
 	Close(ctx context.Context, repo ghclient.Repo, number int) error
 	DismissAlert(ctx context.Context, repo ghclient.Repo, number int, reason, comment string) error
@@ -279,25 +282,15 @@ func (r *FindingReconciler) rerender(
 	return r.markProjected(ctx, fnd, map[string]string{AnnotationProjectedBody: rendered})
 }
 
-// projectComments posts enrichment and report comments not yet projected.
+// projectComments keeps the enrichment sticky comments current and posts
+// report comments not yet projected.
 func (r *FindingReconciler) projectComments(
 	ctx context.Context, fnd *v1alpha1.Finding, tracker trackerClient, repo ghclient.Repo, number int,
 ) error {
 	ann := fnd.GetAnnotations()
 
-	posted, _ := strconv.Atoi(ann[AnnotationProjectedEnrichments])
-	for i := posted; i < len(fnd.Status.Enrichments); i++ {
-		e := fnd.Status.Enrichments[i]
-		if e.Markdown != "" {
-			if err := tracker.Comment(ctx, repo, number, templates.RenderEnrichmentProjection(e)); err != nil {
-				return err
-			}
-		}
-		if err := r.markProjected(ctx, fnd, map[string]string{
-			AnnotationProjectedEnrichments: strconv.Itoa(i + 1),
-		}); err != nil {
-			return err
-		}
+	if err := r.projectEnrichments(ctx, fnd, tracker, repo, number); err != nil {
+		return err
 	}
 
 	if inv := fnd.Status.Investigation; inv != nil && ann[AnnotationProjectedInvestigation] != inv.Name {
@@ -325,6 +318,60 @@ func (r *FindingReconciler) projectComments(
 		}
 		if err := r.markProjected(ctx, fnd, map[string]string{AnnotationProjectedRemediation: rem.Name}); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// projectEnrichments keeps one sticky comment per enhancer up to date: an
+// enrichment's markdown lands in a marker-headed comment that is edited in
+// place when the content moves, never re-posted. Attributes carry no comment
+// — they project as labels via projectedLabels.
+func (r *FindingReconciler) projectEnrichments(
+	ctx context.Context, fnd *v1alpha1.Finding, tracker trackerClient, repo ghclient.Repo, number int,
+) error {
+	var desired []string
+	for _, e := range fnd.Status.Enrichments {
+		if e.Markdown != "" {
+			desired = append(desired, templates.RenderEnrichmentProjection(e))
+		}
+	}
+	var state string
+	if len(desired) > 0 {
+		state = hashOf(strings.Join(desired, "\x00"))
+	}
+	if fnd.GetAnnotations()[AnnotationProjectedEnrichments] == state {
+		return nil
+	}
+	var existing []*ghclient.Comment
+	if len(desired) > 0 {
+		var err error
+		if existing, err = tracker.ListComments(ctx, repo, number); err != nil {
+			return err
+		}
+	}
+	for _, body := range desired {
+		marker, _, _ := strings.Cut(body, "\n")
+		sticky := findSticky(existing, marker)
+		switch {
+		case sticky == nil:
+			if err := tracker.Comment(ctx, repo, number, body); err != nil {
+				return err
+			}
+		case sticky.Body != body:
+			if err := tracker.EditComment(ctx, repo, sticky.ID, body); err != nil {
+				return err
+			}
+		}
+	}
+	return r.markProjected(ctx, fnd, map[string]string{AnnotationProjectedEnrichments: state})
+}
+
+// findSticky returns the first comment headed by marker, or nil.
+func findSticky(comments []*ghclient.Comment, marker string) *ghclient.Comment {
+	for _, c := range comments {
+		if c.Body == marker || strings.HasPrefix(c.Body, marker+"\n") {
+			return c
 		}
 	}
 	return nil
@@ -490,6 +537,19 @@ func projectedLabels(fnd *v1alpha1.Finding) labels.Set {
 	}
 	if inv := fnd.Status.Investigation; inv != nil {
 		s.Recommendation = labels.Recommendation(inv.Recommendation)
+	}
+	// Enrichment attributes, first enhancer wins on a key collision (the
+	// chain runs most-authoritative first, matching owner precedence).
+	for _, e := range fnd.Status.Enrichments {
+		for k, v := range e.Attributes {
+			if _, ok := s.Context[k]; ok {
+				continue
+			}
+			if s.Context == nil {
+				s.Context = map[string]string{}
+			}
+			s.Context[k] = v
+		}
 	}
 	return s
 }

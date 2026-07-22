@@ -6,6 +6,7 @@ package labels
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +18,7 @@ func fullSet() Set {
 		Severity:       LevelHigh,
 		Priority:       LevelMedium,
 		Recommendation: RecommendationRemediate,
+		Context:        map[string]string{"environment": "prod", "system": "storefront"},
 	}
 }
 
@@ -48,6 +50,35 @@ func TestRenderSkipsZeroFields(t *testing.T) {
 	want := []string{"security-finding: opened"}
 	if !slices.Equal(got, want) {
 		t.Errorf("Render() = %v, want %v", got, want)
+	}
+}
+
+func TestContextLabels(t *testing.T) {
+	got := (Set{Context: map[string]string{"tier": "1", "environment": "prod"}}).Render()
+	want := []string{"security-context: environment=prod", "security-context: tier=1"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Render() = %v, want %v", got, want)
+	}
+	parsed := Parse(append(got, "security-context: malformed"))
+	if !reflect.DeepEqual(parsed.Context, map[string]string{"tier": "1", "environment": "prod"}) {
+		t.Errorf("Parse().Context = %v", parsed.Context)
+	}
+}
+
+func TestContextLabelsCapped(t *testing.T) {
+	longKey := strings.Repeat("k", MaxLen)
+	got := (Set{Context: map[string]string{
+		"project": "a-very-long-project-identifier-that-cannot-possibly-fit",
+		longKey:   "dropped",
+	}}).Render()
+	// The oversized value truncates to MaxLen; the oversized key is excluded
+	// outright rather than corrupted.
+	want := []string{"security-context: project=a-very-long-project-iden"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Render() = %v, want %v", got, want)
+	}
+	if len(got[0]) != MaxLen {
+		t.Errorf("len = %d, want exactly MaxLen", len(got[0]))
 	}
 }
 

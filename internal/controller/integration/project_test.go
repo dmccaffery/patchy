@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,17 +26,24 @@ import (
 
 // fakeTracker records every tracking-system write.
 type fakeTracker struct {
-	nextNumber int
-	issues     map[int]*ghclient.Issue
-	comments   []string
-	assigned   []string
-	closed     []int
-	dismissed  []int
-	bodyEdits  int
+	nextNumber    int
+	issues        map[int]*ghclient.Issue
+	comments      []string // Comment() bodies, in call order
+	issueComments map[int][]*ghclient.Comment
+	nextCommentID int64
+	commentEdits  int
+	assigned      []string
+	closed        []int
+	dismissed     []int
+	bodyEdits     int
 }
 
 func newFakeTracker() *fakeTracker {
-	return &fakeTracker{nextNumber: 7, issues: map[int]*ghclient.Issue{}}
+	return &fakeTracker{
+		nextNumber:    7,
+		issues:        map[int]*ghclient.Issue{},
+		issueComments: map[int][]*ghclient.Comment{},
+	}
 }
 
 func (f *fakeTracker) Create(
@@ -79,9 +87,28 @@ func (f *fakeTracker) RemoveLabel(_ context.Context, _ ghclient.Repo, number int
 	return nil
 }
 
-func (f *fakeTracker) Comment(_ context.Context, _ ghclient.Repo, _ int, body string) error {
+func (f *fakeTracker) Comment(_ context.Context, _ ghclient.Repo, number int, body string) error {
 	f.comments = append(f.comments, body)
+	f.nextCommentID++
+	f.issueComments[number] = append(f.issueComments[number], &ghclient.Comment{ID: f.nextCommentID, Body: body})
 	return nil
+}
+
+func (f *fakeTracker) ListComments(_ context.Context, _ ghclient.Repo, number int) ([]*ghclient.Comment, error) {
+	return f.issueComments[number], nil
+}
+
+func (f *fakeTracker) EditComment(_ context.Context, _ ghclient.Repo, commentID int64, body string) error {
+	for _, cs := range f.issueComments {
+		for _, c := range cs {
+			if c.ID == commentID {
+				c.Body = body
+				f.commentEdits++
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("comment %d not found", commentID)
 }
 
 func (f *fakeTracker) Assign(_ context.Context, _ ghclient.Repo, _ int, logins []string) error {
@@ -267,6 +294,77 @@ func TestProjectEnrichmentCommentOnce(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("enrichment comments = %d, want exactly 1", n)
+	}
+}
+
+func TestProjectEnrichmentStickyEdit(t *testing.T) {
+	tracker := newFakeTracker()
+	r, c := newProjector(t, tracker, testIntegration(), projectable(v1alpha1.PhaseOpened))
+	reconcileFinding(t, r)
+
+	f := get(t, c, "finding-aa-1")
+	f.Status.Enrichments = []v1alpha1.Enrichment{{
+		Enhancer: "static-context", Markdown: "owned by team-payments", AppliedAt: metav1.NewTime(testClock),
+	}}
+	if err := c.Status().Update(t.Context(), f); err != nil {
+		t.Fatalf("add enrichment: %v", err)
+	}
+	reconcileFinding(t, r)
+
+	// The markdown moves: the existing comment is edited in place, not
+	// re-posted.
+	f = get(t, c, "finding-aa-1")
+	f.Status.Enrichments[0].Markdown = "owned by team-checkout"
+	if err := c.Status().Update(t.Context(), f); err != nil {
+		t.Fatalf("update enrichment: %v", err)
+	}
+	reconcileFinding(t, r)
+
+	n := 0
+	for _, cm := range tracker.comments {
+		if strings.Contains(cm, "patchy:enrichment static-context") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("enrichment comments posted = %d, want exactly 1", n)
+	}
+	if tracker.commentEdits != 1 {
+		t.Errorf("comment edits = %d, want 1", tracker.commentEdits)
+	}
+	sticky := tracker.issueComments[7][len(tracker.issueComments[7])-1]
+	if !strings.Contains(sticky.Body, "team-checkout") {
+		t.Errorf("sticky body not updated:\n%s", sticky.Body)
+	}
+}
+
+func TestProjectEnrichmentAttributesAsLabels(t *testing.T) {
+	tracker := newFakeTracker()
+	r, c := newProjector(t, tracker, testIntegration(), projectable(v1alpha1.PhaseOpened))
+	reconcileFinding(t, r)
+
+	f := get(t, c, "finding-aa-1")
+	f.Status.Enrichments = []v1alpha1.Enrichment{{
+		Enhancer:   "static-context",
+		Attributes: map[string]string{"environment": "prod", "system": "storefront"},
+		AppliedAt:  metav1.NewTime(testClock),
+	}}
+	if err := c.Status().Update(t.Context(), f); err != nil {
+		t.Fatalf("add enrichment: %v", err)
+	}
+	reconcileFinding(t, r)
+
+	got := tracker.issues[7].Labels
+	for _, want := range []string{"security-context: environment=prod", "security-context: system=storefront"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("labels = %v, want %q", got, want)
+		}
+	}
+	// Attributes alone post no comment.
+	for _, cm := range tracker.comments {
+		if strings.Contains(cm, "patchy:enrichment") {
+			t.Errorf("unexpected enrichment comment:\n%s", cm)
+		}
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -15,8 +14,8 @@ import (
 	"github.com/bitwise-media-group/patchy/pkg/enhance"
 )
 
-// StaticFile enhances issues from a YAML map of repositories to ownership
-// and attributes — the stand-in for a CMDB:
+// StaticFile enhances issues from a YAML map of repositories to ownership,
+// attributes, and optional free-form markdown — the stand-in for a CMDB:
 //
 //	repos:
 //	    acme/shop:
@@ -24,6 +23,8 @@ import (
 //	        attributes:
 //	            system: storefront
 //	            tier: "1"
+//	        markdown: |
+//	            Storefront is PCI-scoped; page #payments-oncall first.
 type StaticFile struct {
 	repos map[string]staticEntry
 }
@@ -31,6 +32,7 @@ type StaticFile struct {
 type staticEntry struct {
 	Owners     []string          `yaml:"owners"`
 	Attributes map[string]string `yaml:"attributes"`
+	Markdown   string            `yaml:"markdown"`
 }
 
 // NewStaticFile loads the map from path.
@@ -60,23 +62,9 @@ func (s *StaticFile) Enhance(_ context.Context, issue enhance.Issue) (*enhance.E
 	if !ok {
 		return nil, nil
 	}
-	var b strings.Builder
-	if len(entry.Owners) > 0 {
-		b.WriteString("**Owners:** @")
-		b.WriteString(strings.Join(entry.Owners, ", @"))
-		b.WriteString("\n")
-	}
-	keys := make([]string, 0, len(entry.Attributes))
-	for k := range entry.Attributes {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		fmt.Fprintf(&b, "**%s:** %s\n", k, entry.Attributes[k])
-	}
 	return &enhance.Enrichment{
 		Owners:          entry.Owners,
-		CommentMarkdown: strings.TrimRight(b.String(), "\n"),
+		CommentMarkdown: strings.TrimRight(entry.Markdown, "\n"),
 		Attributes:      entry.Attributes,
 	}, nil
 }

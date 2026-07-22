@@ -91,6 +91,7 @@ func TestEnhanceAdvancesFinding(t *testing.T) {
 		&crdEnhancer{id: "cmdb", enr: &enhance.Enrichment{
 			Owners:          []string{"alice", "bob"},
 			CommentMarkdown: "owned by team-payments",
+			Attributes:      map[string]string{"tier": "1"},
 		}},
 		&crdEnhancer{id: "empty"}, // (nil, nil): nothing to add
 	}
@@ -103,6 +104,9 @@ func TestEnhanceAdvancesFinding(t *testing.T) {
 	}
 	if len(f.Status.Enrichments) != 1 || f.Status.Enrichments[0].Enhancer != "cmdb" {
 		t.Errorf("enrichments = %+v, want one from cmdb", f.Status.Enrichments)
+	}
+	if f.Status.Enrichments[0].Attributes["tier"] != "1" {
+		t.Errorf("attributes = %v, want tier=1 carried through", f.Status.Enrichments[0].Attributes)
 	}
 	if len(f.Status.Owners) != 2 {
 		t.Errorf("owners = %v, want alice+bob", f.Status.Owners)

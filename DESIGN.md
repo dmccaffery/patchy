@@ -18,7 +18,7 @@ resources as the state machine and GitHub issues as a human-facing projection.
    automated analysis.
 4. A context-enhancement stage runs over freshly opened findings:
    - it may pull information from a CMDB to gather ownership and infrastructure relationships, recorded as
-     enrichments on the Finding and projected as issue comments;
+     enrichments on the Finding and projected out as issue labels (attributes) and sticky comments (markdown);
    - the enhancement logic is a placeholder behind the `pkg/enhance` plugin seam, but the machinery — pick up a
      finding, enrich it, advance its phase — is real.
 5. An investigation agent analyses each eligible finding:
