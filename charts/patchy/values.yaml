@@ -76,39 +76,10 @@ config:
     # these.
     extra: {}
 
-# ---- the pipeline switch-on: Integration + Forge custom resources -----------
-# The controllers idle until an Integration (where findings come from, where
-# the tracking issues go) and a Forge (how repositories are cloned and pushed)
-# exist. Each entry below renders one CR in the release namespace; the
-# referenced Secrets are created out of band (see
-# deploy/kustomize/base/secrets.example.yaml — keys: appID + privateKey, or
-# token, plus webhookSecret for Integrations). `spec` is rendered verbatim, so
-# anything the CRD schema accepts is accepted here.
-integrations: []
-# - name: github
-#   spec:
-#       provider: github
-#       secretRef:
-#           name: patchy-github     # appID+privateKey (or token) + webhookSecret
-#       interval: 10m               # credential revalidation
-#       github:
-#           # baseURL: https://ghes.example.com/api/v3   # GHES only
-#           issues:
-#               enabled: true       # tracking projection + human signals
-#               approveComment: /approve
-#           codeScanningAlerts:
-#               enabled: true       # scanner ingestion + alert dismissal
-
-forges: []
-# - name: github
-#   spec:
-#       provider: github
-#       # baseURL: https://ghes.example.com/api/v3       # GHES only
-#       secretRef:
-#           name: patchy-github     # appID+privateKey or token
-#       # orgs: [acme]              # optional org allowlist
-#       # repositories: ["^acme/payments-.*$"]           # optional regexes
-#       interval: 10m
+# The pipeline switch-on — the Integration and Forge custom resources — lives
+# in the sibling patchy-config chart, installed AFTER this one: Helm validates
+# every manifest against the API server before applying anything, so the CRs
+# cannot ride in the same first install as the CRDs they depend on.
 
 # ---- webhook entry point ----------------------------------------------------
 # Providers deliver webhooks to ONE URL. The integration-controller is the

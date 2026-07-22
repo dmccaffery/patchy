@@ -27,7 +27,9 @@ includes = [".mise/tasks/go-cli.toml", "tasks.toml"]
 # Repo-local tool pins the shared toolchain doesn't carry: the Kubernetes
 # code/CRD generator and the envtest binary manager for api/v1alpha1.
 # controller-gen floats on its own release line; setup-envtest tracks the
-# controller-runtime minor pinned in go.mod (v0.24.x).
+# controller-runtime minor pinned in go.mod (v0.24.x). yq extracts the CRD
+# spec schemas into the patchy-config values schema (hack/codegen.sh).
 [tools]
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.21.0"
 "go:sigs.k8s.io/controller-runtime/tools/setup-envtest" = "0.24.1"
+"aqua:mikefarah/yq" = "4.53.3"

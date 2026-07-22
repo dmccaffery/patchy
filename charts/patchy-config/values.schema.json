@@ -1,0 +1,195 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "patchy-config Helm chart values",
+    "type": "object",
+    "additionalProperties": false,
+    "definitions": {
+        "integration": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "spec"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "spec": {
+                    "$ref": "#/definitions/integrationSpec"
+                }
+            }
+        },
+        "forge": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "spec"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "spec": {
+                    "$ref": "#/definitions/forgeSpec"
+                }
+            }
+        },
+        "integrationSpec": {
+            "description": "IntegrationSpec configures one external system. Exactly the provider block\nmatching spec.provider must be set (CEL-enforced) — integrations are\nstrongly typed, not generic.",
+            "properties": {
+                "github": {
+                    "description": "GitHub is the github provider block.",
+                    "properties": {
+                        "baseURL": {
+                            "description": "BaseURL points at a GitHub Enterprise Server host; empty means\ngithub.com.",
+                            "type": "string"
+                        },
+                        "codeScanningAlerts": {
+                            "description": "CodeScanningAlerts enables scanner ingestion.",
+                            "properties": {
+                                "enabled": {
+                                    "description": "Enabled turns the code-scanning capability on.",
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": ["enabled"],
+                            "type": "object",
+                            "additionalProperties": false
+                        },
+                        "issues": {
+                            "description": "Issues enables the tracking projection.",
+                            "properties": {
+                                "approveComment": {
+                                    "default": "/approve",
+                                    "description": "ApproveComment is the comment command that approves a held remediation.",
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "description": "Enabled turns the issues capability on.",
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": ["enabled"],
+                            "type": "object",
+                            "additionalProperties": false
+                        }
+                    },
+                    "type": "object",
+                    "additionalProperties": false
+                },
+                "interval": {
+                    "default": "10m",
+                    "description": "Interval between credential revalidations.",
+                    "type": "string"
+                },
+                "provider": {
+                    "description": "Provider is the external system type.",
+                    "enum": ["github"],
+                    "type": "string"
+                },
+                "secretRef": {
+                    "description": "SecretRef names the credential Secret. For github: either key \"token\"\n(PAT, dev) or keys \"appID\" + \"privateKey\" (GitHub App), plus\n\"webhookSecret\" for receiver HMAC validation.",
+                    "properties": {
+                        "name": {
+                            "description": "Name of the Secret.",
+                            "minLength": 1,
+                            "type": "string"
+                        }
+                    },
+                    "required": ["name"],
+                    "type": "object",
+                    "additionalProperties": false
+                },
+                "suspend": {
+                    "description": "Suspend pauses reconciliation of this integration.",
+                    "type": "boolean"
+                }
+            },
+            "required": ["provider", "secretRef"],
+            "type": "object",
+            "additionalProperties": false
+        },
+        "forgeSpec": {
+            "description": "ForgeSpec configures repository credentials for one forge, scoped by\noptional org and repository filters. Matching (in internal/forge): the\nrepository URL's host must equal the forge host, then the org allowlist,\nthen the repository regexes; when several Forges match, the more\nconstrained spec wins (orgs set beats unset, then repositories set beats\nunset) and a remaining tie is a configuration error surfaced on the\nFinding.",
+            "properties": {
+                "baseURL": {
+                    "description": "BaseURL is the forge host; empty means the provider's public host\n(github.com).",
+                    "type": "string"
+                },
+                "interval": {
+                    "default": "10m",
+                    "description": "Interval between credential revalidations.",
+                    "type": "string"
+                },
+                "orgs": {
+                    "description": "Orgs restricts this forge to the listed organizations; empty means all.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
+                },
+                "provider": {
+                    "description": "Provider is the forge family.",
+                    "enum": ["github"],
+                    "type": "string"
+                },
+                "repositories": {
+                    "description": "Repositories restricts this forge to repositories whose \"owner/name\"\nmatches any of the listed RE2 regular expressions; empty means all.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
+                },
+                "secretRef": {
+                    "description": "SecretRef names the credential Secret: key \"token\" (PAT, dev) or keys\n\"appID\" + \"privateKey\" (GitHub App).",
+                    "properties": {
+                        "name": {
+                            "description": "Name of the Secret.",
+                            "minLength": 1,
+                            "type": "string"
+                        }
+                    },
+                    "required": ["name"],
+                    "type": "object",
+                    "additionalProperties": false
+                },
+                "suspend": {
+                    "description": "Suspend pauses reconciliation of this forge.",
+                    "type": "boolean"
+                }
+            },
+            "required": ["provider", "secretRef"],
+            "type": "object",
+            "additionalProperties": false
+        }
+    },
+    "properties": {
+        "global": {
+            "type": "object"
+        },
+        "nameOverride": {
+            "type": "string"
+        },
+        "fullnameOverride": {
+            "type": "string"
+        },
+        "commonLabels": {
+            "type": "object"
+        },
+        "commonAnnotations": {
+            "type": "object"
+        },
+        "integrations": {
+            "type": "array",
+            "description": "Integration custom resources rendered into the release namespace",
+            "items": {
+                "$ref": "#/definitions/integration"
+            }
+        },
+        "forges": {
+            "type": "array",
+            "description": "Forge custom resources rendered into the release namespace",
+            "items": {
+                "$ref": "#/definitions/forge"
+            }
+        }
+    }
+}

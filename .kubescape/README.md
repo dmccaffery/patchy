@@ -48,8 +48,8 @@ control asks for.
 Fires only in the dev overlay, the one variant that renders real `Secret` objects (`secret-dev.yaml`, throwaway kind
 credentials) and the static-context ConfigMap — giving the scanner Secret/ConfigMap resources to correlate against the
 controllers' mounts. The mounts are the design: every controller file-mounts the webhook HMAC secret, and the
-GitHub-facing three mount the App key (helm/chart values and base manifests do the same; those scans just have no Secret
-objects in scope). Flagging "workload can read a secret it mounts" is tautological here.
+GitHub-facing three mount the App key (charts/patchy values and base manifests do the same; those scans just have no
+Secret objects in scope). Flagging "workload can read a secret it mounts" is tautological here.
 
 ## images-c0237-signed-but-scanner-cannot-see-it (C-0237)
 

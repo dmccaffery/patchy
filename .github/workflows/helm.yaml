@@ -1,7 +1,8 @@
 # Copyright 2026 Bitwise Media Group Ltd.
 # SPDX-License-Identifier: MIT
 
-# Helm chart publishing, called from the release pipeline (release.yaml) once
+# Helm chart publishing (both charts/patchy and charts/patchy-config, one
+# matrix job each), called from the release pipeline (release.yaml) once
 # the reusable release workflow has cut vX.Y.Z and goreleaser has pushed the
 # container images that version of the chart references to ghcr. A
 # `release: published` trigger would never fire here: goreleaser publishes the
@@ -9,12 +10,12 @@
 # start no workflows (GitHub's recursion guard) — so release.yaml calls this
 # workflow directly, gated on the release_created output, passing the release
 # tag as `ref`. No --version/--app-version overrides are needed: release-please
-# stamps Chart.yaml in the release PR (extra-files in
+# stamps each Chart.yaml in the release PR (extra-files in
 # release-please-config.json), so the tagged commit already carries the right
 # version — the checkout below is at that tag when called from the release
 # pipeline, and at the chosen ref for a manual dispatch.
 #
-# The pushed chart gets a keyless cosign signature and the same GitHub
+# Each pushed chart gets a keyless cosign signature and the same GitHub
 # build-provenance attestation as the binaries and images. Verify with:
 #   gh attestation verify --owner bitwise-media-group \
 #     oci://ghcr.io/bitwise-media-group/patchy/charts/patchy:X.Y.Z
@@ -45,6 +46,9 @@ permissions: {}
 jobs:
     publish:
         runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                chart: [patchy, patchy-config]
         permissions:
             contents: read
             # helm push to ghcr (also pushes the cosign signature artifact)
@@ -64,8 +68,8 @@ jobs:
 
             - name: Lint
               run: |
-                  helm lint helm/chart
-                  helm template patchy helm/chart >/dev/null
+                  helm lint "charts/${{ matrix.chart }}"
+                  helm template "${{ matrix.chart }}" "charts/${{ matrix.chart }}" >/dev/null
 
             - name: Package and push
               id: push
@@ -74,8 +78,8 @@ jobs:
               run: |
                   set -euo pipefail
                   helm registry login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin <<<"${GITHUB_TOKEN}"
-                  helm package helm/chart --destination dist/
-                  out="$(helm push dist/patchy-*.tgz "oci://ghcr.io/${GITHUB_REPOSITORY}/charts" 2>&1)"
+                  helm package "charts/${{ matrix.chart }}" --destination dist/
+                  out="$(helm push "dist/${{ matrix.chart }}"-*.tgz "oci://ghcr.io/${GITHUB_REPOSITORY}/charts" 2>&1)"
                   echo "${out}"
                   digest="$(sed -n 's/^Digest: //p' <<<"${out}")"
                   test -n "${digest}"
@@ -97,11 +101,11 @@ jobs:
                   # legacy signature format (.sig tag + Rekor), matching the
                   # container images: the platform verifies one format everywhere
                   cosign sign --yes --use-signing-config=false \
-                    "ghcr.io/${GITHUB_REPOSITORY}/charts/patchy@${{ steps.push.outputs.digest }}"
+                    "ghcr.io/${GITHUB_REPOSITORY}/charts/${{ matrix.chart }}@${{ steps.push.outputs.digest }}"
 
             - name: Attest build provenance
               uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
               with:
-                  subject-name: ghcr.io/${{ github.repository }}/charts/patchy
+                  subject-name: ghcr.io/${{ github.repository }}/charts/${{ matrix.chart }}
                   subject-digest: ${{ steps.push.outputs.digest }}
                   push-to-registry: true

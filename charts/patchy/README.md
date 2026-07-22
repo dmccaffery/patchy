@@ -44,35 +44,19 @@ The CRDs render as templates gated by `crds.install` — living in `templates/cr
 ## Switching the pipeline on
 
 The controllers idle until two custom resources exist: an **Integration** (where findings come from, where the tracking
-issues go, webhook validation) and a **Forge** (how repositories are cloned and pushed). Render them from values:
+issues go, webhook validation) and a **Forge** (how repositories are cloned and pushed). Those CRs live in the sibling
+[`patchy-config`](../patchy-config) chart, installed **after** this one into the same namespace — Helm validates every
+manifest against the API server before applying anything, so the CRs cannot ride in the same first install as the CRDs
+they depend on:
 
-```yaml
-integrations:
-  - name: github
-    spec:
-      provider: github
-      secretRef:
-        name: patchy-github
-      interval: 10m
-      github:
-        issues:
-          enabled: true
-          approveComment: /approve
-        codeScanningAlerts:
-          enabled: true
-
-forges:
-  - name: github
-    spec:
-      provider: github
-      secretRef:
-        name: patchy-github
-      interval: 10m
+```sh
+helm install patchy-config oci://ghcr.io/bitwise-media-group/patchy/charts/patchy-config \
+    --version <X.Y.Z> --namespace patchy -f values.yaml
 ```
 
-Each entry's `spec` is rendered verbatim and validated server-side by the CRD schema — see
-[`deploy/kustomize/base/crs.example.yaml`](../../deploy/kustomize/base/crs.example.yaml) for the full field walkthrough
-(GHES base URLs, org allowlists, repository regexes).
+See the [`patchy-config` README](../patchy-config/README.md) for the values shape, or apply the CRs yourself with
+`kubectl` — [`deploy/kustomize/base/crs.example.yaml`](../../deploy/kustomize/base/crs.example.yaml) is the full field
+walkthrough (GHES base URLs, org allowlists, repository regexes).
 
 ## Secrets
 
@@ -127,7 +111,6 @@ Per-controller blocks — `integrationController`, `sourceController`, `contextC
 The genuinely shared settings stay global:
 
 - `image.*` — repository prefix (registry included), tag (default `v<appVersion>`), pull policy, pull secrets.
-- `integrations` / `forges` — the pipeline switch-on CRs (above).
 - `webhook.*` — the single external entry point (`host`, plus one of `ingress` / `httpRoute`) in front of the
   integration-controller; a provider has one webhook URL, so exposure is a chart-level concern.
 - `anthropic.*` — the model-credential Secret name/key and the env var it is injected as.
@@ -145,6 +128,7 @@ Do not scale the controllers: all five are singletons by construction, so the De
 
 ## Publishing
 
-`helm/chart` is packaged and pushed to `oci://ghcr.io/bitwise-media-group/patchy/charts` by
-[`.github/workflows/helm.yaml`](../../.github/workflows/helm.yaml) when a release is published; release-please stamps
-`version`/`appVersion` in `Chart.yaml` as part of the release PR. Lint locally with `mise run helm-lint`.
+`charts/patchy` (and the sibling `charts/patchy-config`) is packaged and pushed to
+`oci://ghcr.io/bitwise-media-group/patchy/charts` by [`.github/workflows/helm.yaml`](../../.github/workflows/helm.yaml)
+when a release is published; release-please stamps `version`/`appVersion` in each `Chart.yaml` as part of the release
+PR. Lint locally with `mise run helm-lint`.

@@ -50,9 +50,11 @@ pkg/                PUBLIC plugin seams only: pkg/source (finding sources), pkg/
                     enhancers). Exported signatures must not reference internal/ types.
 deploy/             kustomize base/overlays; deploy/README.md is the operator doc. The container
                     Dockerfile.* live at the repo root (goreleaser dockers_v2 builds them).
-helm/chart/         Helm rendering of the same stack, pushed to ghcr OCI on release
-                    (.github/workflows/helm.yaml); release-please stamps Chart.yaml versions.
-                    Lint/render locally with `mise run helm-lint`.
+charts/             Helm rendering of the same stack, pushed to ghcr OCI on release
+                    (.github/workflows/helm.yaml): charts/patchy (CRDs + controllers) and
+                    charts/patchy-config (the Integration/Forge CRs — a separate chart because
+                    helm validates CRs against CRDs that must already exist). release-please
+                    stamps both Chart.yaml versions. Lint/render with `mise run helm-lint`.
 e2e/                SEPARATE Go module: envtest carries the CRDs, the real binaries run against it,
                     fakegithub (in-memory API) stands in at the network edge, recorded webhook
                     fixtures + the replay tool drive it (`make e2e`).

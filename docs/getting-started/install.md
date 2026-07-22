@@ -1,8 +1,9 @@
 # Install with Helm
 
-The chart is published to GHCR as an OCI artifact on every release and installs the whole stack: the
+Two charts are published to GHCR as OCI artifacts on every release: `patchy` installs the whole stack — the
 `patchy.bitwisemedia.uk` CRDs, five controller Deployments with their RBAC and ConfigMaps, the two Services, the agent
-namespace, and the baseline network policies.
+namespace, and the baseline network policies — and `patchy-config` installs the `Integration`/`Forge` custom resources
+that switch the pipeline on, as a second release once the CRDs exist.
 
 ## Create the namespaces
 
@@ -64,14 +65,37 @@ There is deliberately **no** GitHub credential in the agent namespace — not ev
 as a digest-verified tarball from the source-controller's in-cluster artifact server. See the
 [isolation model](../deployment/isolation.md).
 
-## Install the chart, switch the pipeline on
+## Install the chart
 
-The controllers idle until two custom resources exist: an **Integration** (where findings come from, where the tracking
-issues go, webhook validation) and a **Forge** (how repositories are fetched and pushed). The chart renders them from
-values:
+The `patchy` chart installs the stack — CRDs, controllers, agent sandbox — and nothing pipeline-specific:
 
 ```yaml
 # values.yaml
+agent:
+  networkPolicy:
+    cilium:
+      enabled: true # FQDN egress for the agent sandbox (or istio.enabled)
+```
+
+```sh
+helm install patchy oci://ghcr.io/bitwise-media-group/patchy/charts/patchy \
+  --version <X.Y.Z> --namespace patchy -f values.yaml
+```
+
+The chart's `appVersion` is stamped 1:1 with each release, and the default image tag is derived from it — installing
+chart `X.Y.Z` runs images `vX.Y.Z`. The rendered `NOTES.txt` recaps the webhook URL and the Secrets it expects. The full
+values surface is on the [Helm chart page](../deployment/helm.md).
+
+## Switch the pipeline on: the `patchy-config` chart
+
+The controllers idle until two custom resources exist: an **Integration** (where findings come from, where the tracking
+issues go, webhook validation) and a **Forge** (how repositories are fetched and pushed). They ship as the separate
+`patchy-config` chart — separate because Helm validates every manifest against the API server before applying anything,
+so the CRs cannot install in the same first release as the CRDs they depend on. Install it **after** the `patchy` chart,
+into the **same namespace**:
+
+```yaml
+# config-values.yaml
 integrations:
   - name: github
     spec:
@@ -93,26 +117,18 @@ forges:
       secretRef:
         name: patchy-github
       interval: 10m
-
-agent:
-  networkPolicy:
-    cilium:
-      enabled: true # FQDN egress for the agent sandbox (or istio.enabled)
 ```
 
 ```sh
-helm install patchy oci://ghcr.io/bitwise-media-group/patchy/charts/patchy \
-  --version <X.Y.Z> --namespace patchy -f values.yaml
+helm install patchy-config oci://ghcr.io/bitwise-media-group/patchy/charts/patchy-config \
+  --version <X.Y.Z> --namespace patchy -f config-values.yaml
 ```
 
-Each entry's `spec` is rendered verbatim and validated server-side by the CRD schema —
+Each entry's `spec` is validated client-side by the chart's values schema (generated from the CRDs, so a typo'd field
+fails the install before anything is applied) and again server-side by the CRD —
 [`deploy/kustomize/base/crs.example.yaml`](https://github.com/bitwise-media-group/patchy/blob/main/deploy/kustomize/base/crs.example.yaml)
 is the full field walkthrough (GHES base URLs, org allowlists, repository regexes). Prefer applying the CRs yourself?
-Leave `integrations`/`forges` empty and `kubectl apply` the same objects after the install.
-
-The chart's `appVersion` is stamped 1:1 with each release, and the default image tag is derived from it — installing
-chart `X.Y.Z` runs images `vX.Y.Z`. The rendered `NOTES.txt` recaps the webhook URL and the Secrets it expects. The full
-values surface is on the [Helm chart page](../deployment/helm.md).
+Skip this chart and `kubectl apply` the same objects after the install.
 
 ## Expose the webhook
 

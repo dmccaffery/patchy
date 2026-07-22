@@ -39,7 +39,7 @@ nav = [
     { "status-server" = "configuration/status-server.md" },
   ] },
   { "Deployment" = [
-    { "Helm chart" = "deployment/helm.md" },
+    { "Helm charts" = "deployment/helm.md" },
     { "Webhook exposure" = "deployment/webhook.md" },
     { "Kustomize" = "deployment/kustomize.md" },
     { "Local dev on Colima" = "deployment/colima.md" },

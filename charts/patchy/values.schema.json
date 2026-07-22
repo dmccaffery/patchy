@@ -71,18 +71,6 @@
             "properties": {
                 "create": { "type": "boolean" }
             }
-        },
-        "customResource": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["name", "spec"],
-            "properties": {
-                "name": { "type": "string", "minLength": 1 },
-                "spec": {
-                    "type": "object",
-                    "description": "Rendered verbatim; validated server-side by the CRD schema"
-                }
-            }
         }
     },
     "properties": {
@@ -135,16 +123,6 @@
                     "enum": ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"]
                 }
             }
-        },
-        "integrations": {
-            "type": "array",
-            "description": "Integration custom resources rendered into the release namespace",
-            "items": { "$ref": "#/definitions/customResource" }
-        },
-        "forges": {
-            "type": "array",
-            "description": "Forge custom resources rendered into the release namespace",
-            "items": { "$ref": "#/definitions/customResource" }
         },
         "webhook": {
             "type": "object",

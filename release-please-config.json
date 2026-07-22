@@ -10,7 +10,8 @@
     "packages": {
         ".": {
             "extra-files": [
-                { "type": "generic", "path": "helm/chart/Chart.yaml" },
+                { "type": "generic", "path": "charts/patchy/Chart.yaml" },
+                { "type": "generic", "path": "charts/patchy-config/Chart.yaml" },
                 { "type": "generic", "path": "pyproject.toml" }
             ]
         }

@@ -96,12 +96,13 @@ description = "start colima, build snapshot images, deploy the dev overlay"
 dir = "{{cwd}}"
 run = "./hack/dev-colima.sh"
 
-# The helm chart (helm/chart) renders the same stack as deploy/kustomize and
-# is published to oci://ghcr.io/bitwise-media-group/patchy/charts by
+# The helm charts (charts/patchy = the stack, charts/patchy-config = the
+# Integration/Forge CRs) render the same stack as deploy/kustomize and are
+# published to oci://ghcr.io/bitwise-media-group/patchy/charts by
 # .github/workflows/helm.yaml on release. This is the local gate: lint plus a
 # render of every component combination the templates branch on.
 [helm-lint]
-description = "lint and render the helm chart"
+description = "lint and render the helm charts"
 dir = "{{cwd}}"
 run = "./hack/helm-lint.sh"
 

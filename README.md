@@ -54,7 +54,9 @@ the secrets and custom resources to create, and how the agent's isolation actual
 kubectl apply -k deploy/kustomize/overlays/dev
 ```
 
-A Helm chart rendering the same stack is published to OCI on every release — see [`helm/chart`](helm/chart/README.md):
+Helm charts rendering the same stack are published to OCI on every release — [`charts/patchy`](charts/patchy/README.md)
+is the stack; [`charts/patchy-config`](charts/patchy-config/README.md) carries the Integration/Forge custom resources,
+installed as a second release once the CRDs exist:
 
 ```sh
 helm install patchy oci://ghcr.io/bitwise-media-group/patchy/charts/patchy --namespace patchy --create-namespace
