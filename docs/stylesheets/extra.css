@@ -1148,3 +1148,302 @@
 .md-content--home .md-content__inner {
     display: none;
 }
+
+/* ============================================================
+   DEMO SCRIPT  (.pt-demo) — overrides/demo.html + docs/demo.md
+   Presenter-facing layout: glanceable acts, sticky rail, larger
+   talk-track type. Hidden from site nav; noindex via template.
+   ============================================================ */
+
+/* Banner in the announce slot */
+.pt-demo-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem 0.85rem;
+    padding: 0.45rem 1rem;
+    background: color-mix(in oklab, var(--pt-soil) 22%, var(--md-default-bg-color));
+    border-bottom: 1px solid var(--pt-line);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--pt-muted);
+}
+.pt-demo-banner__mark {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.55rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--pt-amber) 28%, transparent);
+    color: var(--pt-fg);
+    font-family: var(--md-code-font-family, "JetBrains Mono", ui-monospace, monospace);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.pt-demo-banner__text {
+    color: var(--pt-muted);
+}
+
+/* Sticky act jump rail under the header */
+.pt-demo-rail {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: color-mix(in oklab, var(--md-default-bg-color) 92%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--pt-line);
+}
+.pt-demo-rail__inner {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    max-width: 61rem;
+    margin: 0 auto;
+    padding: 0.4rem 0.8rem;
+    -webkit-overflow-scrolling: touch;
+}
+.pt-demo-rail__link {
+    flex: 0 0 auto;
+    padding: 0.28rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid var(--pt-line);
+    background: var(--pt-alt);
+    color: var(--pt-fg) !important;
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    text-decoration: none !important;
+    white-space: nowrap;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease;
+}
+.pt-demo-rail__link:hover,
+.pt-demo-rail__link:focus-visible {
+    border-color: var(--pt-green);
+    background: color-mix(in oklab, var(--pt-green) 14%, var(--pt-alt));
+    color: var(--pt-fg) !important;
+}
+.pt-demo-rail__link--accent {
+    border-color: color-mix(in oklab, var(--pt-amber) 55%, var(--pt-line));
+    background: color-mix(in oklab, var(--pt-amber) 16%, var(--pt-alt));
+}
+
+/* Article body: slightly larger, more breathing room between acts */
+.pt-demo {
+    --pt-demo-say-bg: color-mix(in oklab, var(--pt-green) 7%, var(--md-default-bg-color));
+    --pt-demo-screen-bg: color-mix(in oklab, var(--pt-amber) 10%, var(--md-default-bg-color));
+    --pt-demo-tip-bg: color-mix(in oklab, var(--pt-moss) 8%, var(--md-default-bg-color));
+}
+.pt-demo .md-typeset {
+    font-size: 0.82rem;
+    line-height: 1.65;
+}
+.pt-demo .md-typeset h1 {
+    margin-bottom: 0.4em;
+}
+.pt-demo .md-typeset h2 {
+    margin-top: 2.1em;
+    padding-top: 0.55em;
+    border-top: 1px solid var(--pt-line);
+    scroll-margin-top: 4.5rem;
+}
+.pt-demo .md-typeset h2:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+}
+.pt-demo .md-typeset h3 {
+    margin-top: 1.5em;
+    scroll-margin-top: 4.5rem;
+    font-size: 1.05em;
+    color: var(--pt-muted);
+}
+.pt-demo .md-typeset > h2 + .pt-demo-act-meta {
+    margin-top: -0.35em;
+}
+
+.pt-demo-lede {
+    margin: 0 0 1.1rem;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--pt-line);
+    background: var(--pt-alt);
+    font-size: 0.95em;
+    line-height: 1.55;
+}
+.pt-demo-lede p {
+    margin: 0.35em 0;
+}
+.pt-demo-lede p:first-child {
+    margin-top: 0;
+}
+.pt-demo-lede p:last-child {
+    margin-bottom: 0;
+}
+
+.pt-demo-section-label {
+    margin: -0.35rem 0 0.85rem;
+    font-family: var(--md-code-font-family, "JetBrains Mono", ui-monospace, monospace);
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--pt-faint);
+}
+.pt-demo-section-label p {
+    margin: 0;
+}
+
+.pt-demo-act-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0 0 0.95rem;
+}
+.pt-demo-act-meta p {
+    margin: 0;
+    display: contents;
+}
+.pt-demo-clock,
+.pt-demo-dur {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.6rem;
+    border-radius: 999px;
+    font-family: var(--md-code-font-family, "JetBrains Mono", ui-monospace, monospace);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+.pt-demo-clock {
+    background: color-mix(in oklab, var(--pt-green) 18%, transparent);
+    color: var(--pt-fg);
+    border: 1px solid color-mix(in oklab, var(--pt-green) 40%, var(--pt-line));
+}
+.pt-demo-dur {
+    background: transparent;
+    color: var(--pt-muted);
+    border: 1px solid var(--pt-line);
+}
+
+.pt-demo-rail-phases {
+    display: inline-block;
+    padding: 0.35rem 0.55rem;
+    border-radius: 6px;
+    background: var(--pt-code);
+    font-size: 0.85em;
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* Color-code the three roles a presenter scans for */
+.pt-demo .md-typeset .admonition.quote,
+.pt-demo .md-typeset details.quote {
+    border-color: color-mix(in oklab, var(--pt-green) 55%, var(--pt-line));
+    background: var(--pt-demo-say-bg);
+}
+.pt-demo .md-typeset .admonition.quote > .admonition-title,
+.pt-demo .md-typeset details.quote > summary {
+    background: color-mix(in oklab, var(--pt-green) 12%, transparent);
+}
+.pt-demo .md-typeset .admonition.quote .admonition-title::before,
+.pt-demo .md-typeset details.quote > summary::before {
+    background-color: var(--pt-green);
+}
+
+.pt-demo .md-typeset .admonition.example,
+.pt-demo .md-typeset details.example {
+    border-color: color-mix(in oklab, var(--pt-amber) 55%, var(--pt-line));
+    background: var(--pt-demo-screen-bg);
+}
+.pt-demo .md-typeset .admonition.example > .admonition-title,
+.pt-demo .md-typeset details.example > summary {
+    background: color-mix(in oklab, var(--pt-amber) 14%, transparent);
+}
+.pt-demo .md-typeset .admonition.example .admonition-title::before,
+.pt-demo .md-typeset details.example > summary::before {
+    background-color: var(--pt-amber);
+}
+
+.pt-demo .md-typeset .admonition.tip,
+.pt-demo .md-typeset details.tip {
+    border-color: color-mix(in oklab, var(--pt-moss) 50%, var(--pt-line));
+    background: var(--pt-demo-tip-bg);
+}
+
+/* Talk tracks: larger, easier to read while looking up at the audience */
+.pt-demo .md-typeset .admonition.quote > :not(.admonition-title) {
+    font-size: 1.05em;
+    line-height: 1.62;
+}
+.pt-demo .md-typeset .admonition.quote p {
+    margin-top: 0.55em;
+    margin-bottom: 0.55em;
+}
+.pt-demo .md-typeset .admonition.quote p:first-of-type {
+    margin-top: 0;
+}
+.pt-demo .md-typeset .admonition.quote p:last-child {
+    margin-bottom: 0;
+}
+.pt-demo .md-typeset .admonition.example > :not(.admonition-title) {
+    font-weight: 550;
+}
+
+/* Compact prep checklist table */
+.pt-demo .md-typeset table:not([class]) {
+    font-size: 0.92em;
+}
+.pt-demo .md-typeset table:not([class]) th {
+    background: var(--pt-alt);
+}
+.pt-demo .md-typeset table:not([class]) td:first-child,
+.pt-demo .md-typeset table:not([class]) th:first-child {
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* Side-by-side short/long tips on wide screens */
+.pt-demo-flex {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    margin: 0.75rem 0 1.25rem;
+}
+.pt-demo-flex > .admonition,
+.pt-demo-flex > details {
+    margin: 0 !important;
+}
+@media (min-width: 720px) {
+    .pt-demo-flex {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* Wider reading column when side nav is hidden */
+.md-main__inner:has(.pt-demo) {
+    max-width: 72rem;
+}
+.md-content:has(.pt-demo) {
+    max-width: 52rem;
+}
+
+/* Keep act anchors clear of sticky header + rail */
+.pt-demo [id] {
+    scroll-margin-top: 5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pt-demo-rail {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        background: var(--md-default-bg-color);
+    }
+}
