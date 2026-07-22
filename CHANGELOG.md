@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/bitwise-media-group/patchy/compare/v0.5.4...v0.5.5) (2026-07-22)
+
+
+### Bug Fixes
+
+* **agent-runner:** keep report frontmatter in the envelope; strip at presentation ([4165209](https://github.com/bitwise-media-group/patchy/commit/416520939969b80725c407bcd42a3c6a548f1781))
+
 ## [0.5.4](https://github.com/bitwise-media-group/patchy/compare/v0.5.3...v0.5.4) (2026-07-22)
 
 
