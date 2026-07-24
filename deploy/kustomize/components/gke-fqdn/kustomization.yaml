@@ -1,0 +1,35 @@
+# Copyright 2026 Bitwise Media Group Ltd.
+# SPDX-License-Identifier: MIT
+#
+# Optional component: FQDN egress policy for the agent sandbox, for GKE
+# Dataplane V2 clusters. Enable it from an overlay with
+#
+#     components:
+#         - ../../components/gke-fqdn
+#
+# On a self-managed Cilium use ../cilium instead, and on an Istio mesh
+# ../istio — the same allowlist, enforced in a different plane. Never combine
+# two of them.
+#
+# Besides adding the FQDNNetworkPolicies, this DROPS the base policy's
+# "TCP 443 to anywhere outside the cluster" egress rule. That is the whole
+# point of the component: network policies are ADDITIVE — a packet matching
+# ANY policy that selects the pod is allowed, and no policy can subtract from
+# another — so leaving the broad rule in place would union with the FQDN
+# allowlist and make it decorative. The rest of base/networkpolicy.yaml stays:
+# the namespace default-deny, DNS (which is also how Dataplane V2 learns the
+# addresses to program), and the artifact server, neither of which an
+# FQDNNetworkPolicy can express.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+    - fqdnnetworkpolicy.yaml
+
+patches:
+    - target:
+          kind: NetworkPolicy
+          name: patchy-agents-egress
+      patch: |
+          - op: remove
+            path: /spec/egress/2

@@ -395,6 +395,16 @@
                     "required": ["create", "cilium", "istio"],
                     "properties": {
                         "create": { "type": "boolean" },
+                        "mode": {
+                            "description": "Hostname-enforcement dialect for the agent sandbox; auto detects it from the cluster's API surface",
+                            "type": "string",
+                            "enum": ["auto", "none", "cilium", "gke", "istio"]
+                        },
+                        "broadEgress": {
+                            "description": "Whether the base policy keeps its TCP-443-to-anywhere rule; auto drops it whenever a hostname mode is enforcing, because policies are additive",
+                            "type": "string",
+                            "enum": ["auto", "always", "never"]
+                        },
                         "clusterCIDRs": { "type": "array", "items": { "type": "string" } },
                         "clusterDNSPatterns": { "type": "array", "items": { "type": "string" } },
                         "cilium": {

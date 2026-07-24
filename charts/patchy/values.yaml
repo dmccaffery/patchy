@@ -431,12 +431,55 @@ agent:
     # The sandbox policies: default-deny both directions plus DNS, the
     # artifact server, and TCP-443-only external egress. A plain
     # NetworkPolicy cannot match hostnames; enforcement at that level needs
-    # `cilium` or `istio` below, which render one policy per enabled runner
-    # (selecting pods by their harness label) so each reaches only its own
-    # model API. Credential absence is the real control either way — see
+    # one of the `mode` dialects below, which render one policy per enabled
+    # runner (selecting pods by their harness label) so each reaches only its
+    # own model API. Credential absence is the real control either way — see
     # deploy/kustomize/base/networkpolicy.yaml.
     networkPolicy:
         create: true
+        # Which hostname-enforcement dialect the cluster gets:
+        #
+        #   auto    detect it (default). Helm resolves .Capabilities against
+        #           the live cluster on install/upgrade and on every
+        #           helm-controller reconcile, so this picks `gke` when GKE's
+        #           FQDNNetworkPolicy CRD is present, `cilium` when a real
+        #           Cilium is, and `none` otherwise. Auto never picks `cilium`
+        #           on GKE: Dataplane V2 publishes cilium.io CRDs but has not
+        #           honoured CiliumNetworkPolicy since 1.21.5-gke.1300 and
+        #           rejects every L7 rule, so a CNP there enforces nothing
+        #           while looking like it does. Off-cluster `helm template`
+        #           sees no cluster and resolves to `none` — pin the mode when
+        #           you need a deterministic render.
+        #   none    base NetworkPolicy only.
+        #   cilium  CiliumNetworkPolicy with toFQDNs; needs Cilium's DNS
+        #           proxy. Setting this explicitly on GKE is trusted (a
+        #           self-managed Cilium without Dataplane V2) but is a
+        #           silent no-op on Dataplane V2 itself.
+        #   gke     FQDNNetworkPolicy on GKE Dataplane V2; the cluster needs
+        #           --enable-fqdn-network-policy (that flag is what installs
+        #           the CRD, which is what makes auto-detection honest).
+        #   istio   REGISTRY_ONLY Sidecar + ServiceEntry per runner, and adds
+        #           the injection label to the agent namespace. Never chosen
+        #           by auto: CRD presence says nothing about native sidecars,
+        #           without which the agent Job never completes.
+        #
+        # A legacy values file setting cilium.enabled or istio.enabled still
+        # works — those are consulted when mode is `auto`.
+        mode: auto
+        # The base policy's "TCP 443 to anywhere outside the cluster" rule.
+        # Network policies are ADDITIVE — a packet matching ANY policy that
+        # selects the pod is allowed, and no policy can subtract from another
+        # — so keeping this rule alongside an FQDN allowlist makes the
+        # allowlist decorative: the union is still "443 to anywhere".
+        #
+        #   auto    drop it when mode is cilium or gke, keep it when mode is
+        #           none or istio (the sidecar enforces on SNI in a separate
+        #           plane and still wants the L3 floor beneath it). Default.
+        #   always  keep it regardless. The honest setting while soaking a new
+        #           mode: if the mode turns out not to be enforcing, egress
+        #           fails open rather than blackholing every runner.
+        #   never   drop it regardless.
+        broadEgress: auto
         # Cluster-internal ranges the agent egress must NOT reach (pod/
         # service/node CIDRs plus link-local for cloud metadata). Adjust to
         # your cluster.
@@ -447,11 +490,13 @@ agent:
             - 169.254.0.0/16
         # Cilium only: cluster-local DNS names every runner pod may resolve on
         # top of its own model host — this is what lets the artifact fetch
-        # resolve source-controller's Service.
+        # resolve source-controller's Service. GKE's FQDN policy cannot name a
+        # resolver, so under mode `gke` DNS comes from the base policy and
+        # this is unused.
         clusterDNSPatterns:
             - "*.svc.cluster.local"
-        # FQDN egress allowlist for Cilium CNIs (requires DNS-based policy).
-        # Mutually exclusive with istio.
+        # Deprecated aliases for `mode`, honoured only while mode is `auto`.
+        # cilium.enabled -> mode: cilium; istio.enabled -> mode: istio.
         cilium:
             enabled: false
         # The same allowlist as per-runner Istio Sidecars (REGISTRY_ONLY) +

@@ -17,7 +17,20 @@
 #
 # If your CNI is not Cilium, leave this disabled; the base NetworkPolicy
 # still applies and is the floor. See deploy/kustomize/components/cilium.
-{{- if and .Values.agent.networkPolicy.create .Values.agent.networkPolicy.cilium.enabled }}
+#
+# NOT FOR GKE. Dataplane V2 is Cilium, but it ignores this CRD and rejects
+# every L7 rule, so a policy rendered there enforces nothing while looking
+# like it does — use mode `gke` (networkpolicy-gke.yaml) instead. `mode: auto`
+# never picks cilium on a GKE cluster for exactly this reason; setting
+# `mode: cilium` explicitly is trusted, for a self-managed Cilium on GKE
+# without Dataplane V2.
+#
+# Under this mode the base agent-egress NetworkPolicy is not rendered at all
+# (see networkpolicy.yaml): policies are additive, so its DNS and 443 rules
+# would union with — and undo — what this one restricts. Everything the pod
+# needs is below, and the namespace default-deny remains the floor, so a
+# missing CRD fails closed.
+{{- if and .Values.agent.networkPolicy.create (eq (include "patchy.egressMode" .) "cilium") }}
 {{- $root := . }}
 {{- $clusterDNS := .Values.agent.networkPolicy.clusterDNSPatterns | default list }}
 {{- range $id, $r := .Values.agent.runners }}

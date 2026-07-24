@@ -48,15 +48,33 @@ routing to the {{ include "patchy.fullname" . }}-integration-controller
 Service — then point the GitHub App's single webhook URL at
 https://<host>/github/webhooks.
 {{- end }}
-{{- if not (or .Values.agent.networkPolicy.cilium.enabled .Values.agent.networkPolicy.istio.enabled) }}
+{{- $egressMode := include "patchy.egressMode" . }}
+{{- if eq $egressMode "none" }}
 
 NOTE: the agent sandbox currently has no hostname-level egress policy — the
 base NetworkPolicy allows TCP 443 to anywhere, and credential absence (the
 agent pod holds no forge credential; the repository arrives as a
 digest-verified tarball from source-controller's artifact server) is the
-control. If your cluster runs Cilium or Istio, enable
-agent.networkPolicy.cilium.enabled or agent.networkPolicy.istio.enabled for
-defence in depth.
+control.
+
+agent.networkPolicy.mode is {{ .Values.agent.networkPolicy.mode | default "auto" }}, and no enforceable dialect was found.
+For defence in depth, one of:
+
+  * GKE Dataplane V2 — recreate or update the cluster with
+    --enable-fqdn-network-policy, then re-reconcile; mode auto picks it up.
+  * Cilium — needs DNS-based policy (the DNS proxy); auto picks it up.
+  * Istio — set mode: istio (never auto-selected: it needs native sidecars
+    and namespace injection, which CRD presence does not imply).
+
+Note that auto can only see the cluster when Helm renders against one; an
+off-cluster `helm template` always reports none.
+{{- else }}
+
+Agent sandbox egress: hostname-enforced via mode {{ $egressMode }}{{ if include "patchy.broadEgress" . }}, but the base
+policy's broad "TCP 443 to anywhere" rule is STILL IN PLACE — network policies
+are additive, so the allowlist is not actually constraining egress. That is
+what agent.networkPolicy.broadEgress={{ .Values.agent.networkPolicy.broadEgress | default "auto" }} asks for; set it to `auto` once the mode
+is soaked{{ else }} — each runner reaches only its own model API{{ end }}.
 {{- end }}
 
 For the pod-security labels on {{ .Release.Namespace }} (the chart only

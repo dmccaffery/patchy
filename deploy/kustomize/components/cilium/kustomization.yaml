@@ -10,9 +10,33 @@
 # The prod overlay does. The dev overlay does not (kind ships kindnet, not
 # Cilium, and a CiliumNetworkPolicy CRD that does not exist would fail the
 # apply). On an Istio mesh use ../istio instead — same allowlist, enforced by
-# the sidecar.
+# the sidecar; on GKE Dataplane V2 use ../gke-fqdn, because GKE ignores this
+# CRD and rejects every L7 rule in it.
+#
+# Besides adding the CiliumNetworkPolicies, this DELETES the base
+# patchy-agents-egress policy. Network policies are ADDITIVE — a packet
+# matching ANY policy that selects the pod is allowed, and no policy can
+# subtract from another — so leaving it in place would union its "TCP 443 to
+# anywhere" rule with the FQDN allowlist and make the allowlist decorative,
+# and would grant DNS outside Cilium's proxy, which is what learns the
+# resolved addresses in the first place. Everything an agent pod legitimately
+# needs (DNS, the artifact server, its model API) is in the policies here, and
+# the namespace default-deny stays as the floor — so a missing CRD fails the
+# sandbox closed rather than open.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
 resources:
     - networkpolicy-cilium.yaml
+
+patches:
+    - target:
+          kind: NetworkPolicy
+          name: patchy-agents-egress
+      patch: |
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+              name: patchy-agents-egress
+              namespace: patchy-agents
+          $patch: delete

@@ -17,7 +17,7 @@
 # (the classic istio-init container needs NET_ADMIN and is rejected by the
 # restricted PSS). Unlike Cilium, the sidecar does not constrain what names
 # the pod may RESOLVE. See deploy/kustomize/components/istio.
-{{- if and .Values.agent.networkPolicy.create .Values.agent.networkPolicy.istio.enabled }}
+{{- if and .Values.agent.networkPolicy.create (eq (include "patchy.egressMode" .) "istio") }}
 {{- $root := . }}
 {{- range $id, $r := .Values.agent.runners }}
 {{- if $r.enabled }}
