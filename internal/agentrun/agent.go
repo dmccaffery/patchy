@@ -143,7 +143,7 @@ func (a *Agent) remediate(ctx context.Context, params remediationParams) *envelo
 	}
 
 	res, runErr := a.exec.Run(ctx, h.PromptSpec(a.cfg.repoDir(), harness.PromptRequest{
-		Prompt:          prompt,
+		Prompt:    prompt,
 		Model:     cliModel(a.cfg.RemediateModel, a.cfg.RemediateHarness),
 		MaxTurns:  params.maxTurns,
 		Sandbox:   harness.SandboxWorkspaceWrite,
@@ -245,7 +245,7 @@ func (a *Agent) investigate(ctx context.Context) *envelope.Investigation {
 	}
 
 	res, runErr := a.exec.Run(ctx, h.PromptSpec(a.cfg.repoDir(), harness.PromptRequest{
-		Prompt:          prompt,
+		Prompt:    prompt,
 		Model:     cliModel(a.cfg.InvestigateModel, a.cfg.InvestigateHarness),
 		MaxTurns:  a.cfg.InvestigateMaxTurns,
 		Sandbox:   harness.SandboxReadOnly,

@@ -38,15 +38,18 @@ func NewCodex() *Codex {
 // codex exec has no equivalents for MaxTurns or a pre-assigned SessionID, so
 // those request fields do not map; budget and timeout enforcement stay with
 // the runner, and the session id is read back from the stream's thread.started
-// event instead. The neutral Sandbox posture is not rendered here either:
-// codex writes its report through the same apply_patch tool it edits source
-// with, so the read-only posture cannot be expressed as a tool grammar the way
-// claude does — the restriction is instead (to be) carried by execpolicy rules
-// mounted at $CODEX_HOME/rules, and --sandbox stays danger-full-access until
-// the pod's kernel sandbox is confirmed to initialise. AddDirs is left unmapped
-// for now (codex 0.145 gained --add-dir; wiring it is a follow-up).
-// SystemPromptAppend has no system-prompt channel either and is folded into
-// the prompt so its instructions still reach the agent.
+// event instead. The neutral Sandbox posture is intentionally not rendered:
+// codex's read-only/workspace-write modes are enforced by bubblewrap, which
+// this image does not ship, and enabling it would mean relaxing the pod's
+// RuntimeDefault seccomp profile — it gates the user-namespace and mount
+// syscalls bwrap needs (verified on-cluster: userns clone is EPERM under
+// RuntimeDefault, works under Unconfined). That is not a trade worth making to
+// prevent writes in a pod that already has no egress, no credentials, a
+// read-only rootfs, and a workspace discarded after the run — so --sandbox
+// stays danger-full-access for every posture. AddDirs is likewise unmapped
+// (codex 0.145 gained --add-dir; wiring it is a follow-up). SystemPromptAppend
+// has no system-prompt channel either and is folded into the prompt so its
+// instructions still reach the agent.
 func (c *Codex) PromptSpec(ws string, req PromptRequest) runner.CommandSpec {
 	prompt := req.Prompt
 	if req.SystemPromptAppend != "" {
