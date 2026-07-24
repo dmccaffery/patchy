@@ -11,6 +11,7 @@ deploy/
 │   │                          #   RBAC, the shared ConfigMap, five Deployments,
 │   │                          #   Services, network policies
 │   ├── components/cilium/     # optional FQDN egress (CiliumNetworkPolicy)
+│   ├── components/gke-fqdn/   # optional FQDN egress (GKE Dataplane V2 FQDNNetworkPolicy)
 │   ├── components/istio/      # optional Sidecar + ServiceEntry + netpol
 │   └── overlays/
 │       ├── dev/               # kind/colima: NodePort 30079, throwaway secrets + CRs,

@@ -27,13 +27,13 @@ Deploying the stack takes three steps, each with its own page:
 | An Anthropic credential | An API key or a `claude setup-token` OAuth token — the agent investigates and remediates via the `claude` CLI inside the sandbox pod.  |
 | Inbound HTTPS           | GitHub must reach the integration-controller's `/github/webhooks` — enable the chart's `webhook.ingress` or `webhook.httpRoute`.       |
 
-!!! tip "Hostname-level egress needs Cilium or Istio"
+!!! tip "Hostname-level egress needs Cilium, GKE Dataplane V2 or Istio"
 
     The chart always renders baseline `NetworkPolicy` objects, but plain L3/L4 policies cannot match hostnames. To
-    pin the agent sandbox's egress to `api.anthropic.com` at the DNS level, enable exactly one of
-    `agent.networkPolicy.cilium.enabled` or `agent.networkPolicy.istio.enabled`. There are deliberately no GitHub
-    hosts in the allowlist — the agent pod never talks to a forge. See the
-    [isolation model](../deployment/isolation.md) for what each layer requires.
+    pin the agent sandbox's egress to `api.anthropic.com` at the DNS level, `agent.networkPolicy.mode` selects the
+    dialect your infrastructure enforces — `cilium`, `gke` or `istio` — and defaults to `auto`, which detects it from
+    the cluster itself. There are deliberately no GitHub hosts in the allowlist — the agent pod never talks to a forge.
+    See the [isolation model](../deployment/isolation.md) for what each layer requires.
 
 ## The moving parts you will deploy
 

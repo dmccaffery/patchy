@@ -118,10 +118,19 @@ Everything else a binary binds (see the [configuration reference](../configurati
 | `agent.networkPolicy.clusterCIDRs`       | RFC-1918 + link-local                                 | Cluster-internal ranges excluded from agent egress                                     |
 | `agent.runners.<harness>.hosts`          | claude: `api.anthropic.com`                           | Per-runner egress allowlist — deliberately **no** forge hosts                          |
 | `agent.networkPolicy.clusterDNSPatterns` | `*.svc.cluster.local`                                 | Cilium only: cluster-local names every runner may resolve (for the artifact fetch)     |
-| `agent.networkPolicy.cilium.enabled`     | `false`                                               | One CiliumNetworkPolicy per enabled runner, by harness label (needs the DNS proxy)     |
-| `agent.networkPolicy.istio.enabled`      | `false`                                               | Sidecar (REGISTRY_ONLY) + ServiceEntry (needs native sidecars + Istio CNI)             |
+| `agent.networkPolicy.mode`               | `auto`                                                | Hostname-egress dialect: `auto`/`none`/`cilium`/`gke`/`istio` — one policy per runner  |
+| `agent.networkPolicy.broadEgress`        | `auto`                                                | Keep the base "443 to anywhere" rule: `auto`/`always`/`never` — see the warning below  |
+| `agent.networkPolicy.cilium.enabled`     | `false`                                               | Deprecated alias for `mode: cilium`, honoured only while `mode` is `auto`              |
+| `agent.networkPolicy.istio.enabled`      | `false`                                               | Deprecated alias for `mode: istio`, honoured only while `mode` is `auto`               |
 
-Enabling both Cilium and Istio fails the render — pick one. See the
+`mode: auto` reads the cluster's API surface on every render against a live cluster — including every helm-controller
+reconcile — and picks `gke` (GKE's `FQDNNetworkPolicy`, needs a cluster with `--enable-fqdn-network-policy`), `cilium`
+(a real Cilium; never selected on GKE, where a `CiliumNetworkPolicy` enforces nothing) or `none`. It never selects
+`istio`. An off-cluster `helm template` sees no cluster and renders `none`, so pin `mode` when you need a deterministic
+render. Enabling both Cilium and Istio via the deprecated aliases fails the render — pick one.
+
+Because network policies are **additive**, an FQDN allowlist alongside the base policy's "443 to anywhere" rule
+constrains nothing; `broadEgress: auto` therefore drops that rule whenever a hostname mode is enforcing. See the
 [isolation model](isolation.md#network-egress-the-floor-and-the-fence) for what each layer requires and what it doesn't
 cover.
 

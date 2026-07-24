@@ -81,8 +81,9 @@ The `patchy` chart installs the stack — CRDs, controllers, agent sandbox — a
 # values.yaml
 agent:
   networkPolicy:
-    cilium:
-      enabled: true # FQDN egress for the agent sandbox (or istio.enabled)
+    # FQDN egress for the agent sandbox. `auto` (the default) detects the
+    # dialect the cluster enforces; pin cilium / gke / istio to be explicit.
+    mode: auto
 ```
 
 ```sh

@@ -22,6 +22,7 @@ deploy/
 ├── kustomize/
 │   ├── base/                        # CRDs, namespaces, RBAC, config, deployments, services, netpol
 │   ├── components/cilium/           # optional: FQDN egress policy for the agent sandbox (Cilium CNI)
+│   ├── components/gke-fqdn/         # optional: the same allowlist as an FQDNNetworkPolicy (GKE Dataplane V2)
 │   ├── components/istio/            # optional: the same allowlist as a Sidecar + ServiceEntry (Istio mesh)
 │   └── overlays/{dev,prod}/
 └── README.md
@@ -165,20 +166,31 @@ endpoint (169.254.169.254) excluded. **A plain NetworkPolicy is L3/L4 and cannot
 every HTTPS host on the internet, not just Anthropic's. Adjust the `except:` CIDRs in `base/networkpolicy.yaml` to your
 cluster's pod/service/node CIDRs.
 
-**3. CiliumNetworkPolicy — defence in depth, where the CNI supports it.** `components/cilium/networkpolicy-cilium.yaml`
-(enabled by the prod overlay) narrows that egress to `toFQDNs`: `api.anthropic.com` and nothing else external — no
-GitHub hosts appear in the agent's allowlist at all, because the pod never talks to a forge. Do not mistake the FQDN
-policy for the boundary; the missing credential is the boundary.
+**3. Hostname policy — defence in depth, where the infrastructure supports it.** Add exactly one component; each narrows
+that egress to `api.anthropic.com` and nothing else external. No GitHub hosts appear in the agent's allowlist at all,
+because the pod never talks to a forge. Do not mistake the FQDN policy for the boundary; the missing credential is the
+boundary.
 
-On an Istio mesh, `components/istio` delivers the same allowlist instead: a `Sidecar` with `REGISTRY_ONLY` (exposing
-only the `api.anthropic.com` ServiceEntry and the `patchy` namespace's artifact Service), matched by SNI. It requires
-native sidecars (Kubernetes ≥ 1.29, istiod with `ENABLE_NATIVE_SIDECARS=true` — a classic sidecar hangs the Job) and the
-Istio CNI node agent (`patchy-agents` enforces the `restricted` Pod Security Standard, which rejects `istio-init`). Two
-differences from Cilium to keep in mind: the proxy does not constrain what names the pod may resolve, so DNS
-exfiltration stays open; and enforcement lives inside the pod rather than on the node.
+- `components/cilium` (enabled by the prod overlay) — a `CiliumNetworkPolicy` with `toFQDNs`, plus a DNS rule bounding
+  what names the pod may resolve at all. Requires Cilium with the DNS proxy.
+- `components/gke-fqdn` — an `FQDNNetworkPolicy` (`networking.gke.io/v1alpha1`) for GKE Dataplane V2, which is Cilium
+  underneath but has not honoured the `CiliumNetworkPolicy` CRD since 1.21.5-gke.1300 and rejects every L7 rule; the
+  cilium component is inert there. Requires the cluster to carry `--enable-fqdn-network-policy`. It cannot express DNS
+  or a ClusterIP destination, so both stay with the base policy — and DNS exfiltration stays open.
+- `components/istio` — a `Sidecar` with `REGISTRY_ONLY` (exposing only the `api.anthropic.com` ServiceEntry and the
+  `patchy` namespace's artifact Service), matched by SNI. Requires native sidecars (Kubernetes ≥ 1.29, istiod with
+  `ENABLE_NATIVE_SIDECARS=true` — a classic sidecar hangs the Job) and the Istio CNI node agent (`patchy-agents`
+  enforces the `restricted` Pod Security Standard, which rejects `istio-init`). Two differences from Cilium: the proxy
+  does not constrain what names the pod may resolve, so DNS exfiltration stays open; and enforcement lives inside the
+  pod rather than on the node.
 
-If you have neither Cilium nor Istio, drop the components. The base policy still applies and is then the whole of the
-L3/L4 story.
+The cilium and gke-fqdn components also patch the base policy — deleting `patchy-agents-egress` and removing its broad
+443 rule respectively. That is load-bearing, not tidiness: network policies are **additive**, so an FQDN allowlist
+sitting next to a rule that already permits 443 to `0.0.0.0/0` constrains nothing at all. The namespace default-deny
+survives either patch, so a missing CRD fails the sandbox closed.
+
+If you have none of the three, drop the components. The base policy still applies and is then the whole of the L3/L4
+story.
 
 ## Applying
 

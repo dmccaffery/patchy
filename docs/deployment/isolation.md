@@ -53,27 +53,50 @@ in `base/networkpolicy.yaml` (kustomize) to your cluster's pod/service/node CIDR
 plain NetworkPolicy is L3/L4 and cannot match a hostname**, so "TCP 443" means every HTTPS host on the internet, not
 just Anthropic's.
 
-Pinning egress to hostnames takes one of two optional layers, and the allowlist is deliberately short:
-`api.anthropic.com` and the in-cluster artifact endpoint. **No GitHub hosts appear anywhere in it** — the pod never
-talks to a forge, so there is nothing to allow.
+Pinning egress to hostnames takes one of three optional layers, selected by `agent.networkPolicy.mode` (Helm) or by the
+matching kustomize component. The allowlist is deliberately short: `api.anthropic.com` and the in-cluster artifact
+endpoint. **No GitHub hosts appear anywhere in it** — the pod never talks to a forge, so there is nothing to allow.
 
-- **Cilium** (`agent.networkPolicy.cilium.enabled`, or the kustomize `components/cilium` — what the prod overlay uses) —
-  a `CiliumNetworkPolicy` with `toFQDNs: api.anthropic.com`, plus a DNS rule constraining what names the pod may resolve
+- **Cilium** (`mode: cilium`, or the kustomize `components/cilium` — what the prod overlay uses) — a
+  `CiliumNetworkPolicy` with `toFQDNs: api.anthropic.com`, plus a DNS rule constraining what names the pod may resolve
   at all (`*.anthropic.com` and `*.svc.cluster.local`, so the artifact fetch still resolves). Requires Cilium with the
   DNS proxy.
-- **Istio** (`agent.networkPolicy.istio.enabled`, or `components/istio`) — the same allowlist as a `Sidecar` in
-  `REGISTRY_ONLY` mode (exposing only the `api.anthropic.com` ServiceEntry and the release namespace's artifact
-  Service), matched by SNI. Two hard requirements: **native sidecars** (Kubernetes ≥ 1.29 and istiod with
-  `ENABLE_NATIVE_SIDECARS=true` — a classic sidecar never terminates, hanging the Job, and blackholes the init
-  container's artifact fetch), and the **Istio CNI node agent** (the `restricted` PSS rejects `istio-init`'s
-  NET_ADMIN/NET_RAW).
+- **GKE Dataplane V2** (`mode: gke`, or `components/gke-fqdn`) — an `FQDNNetworkPolicy` (`networking.gke.io/v1alpha1`)
+  naming the same host on 443. Dataplane V2 _is_ Cilium, but it has not honoured the `CiliumNetworkPolicy` CRD since
+  1.21.5-gke.1300 and rejects every L7 rule, so the Cilium layer above is inert there — this is its equivalent, with
+  `anetd` snooping DNS answers in place of Cilium's proxy. Requires the cluster to be created or updated with
+  `--enable-fqdn-network-policy` (Preview; kube-dns or Cloud DNS; at most 50 resolved addresses per name). It cannot
+  express DNS or a ClusterIP destination, so DNS and the artifact fetch stay with the base policy — which also means it
+  does **not** close the DNS exfiltration channel described below.
+- **Istio** (`mode: istio`, or `components/istio`) — the same allowlist as a `Sidecar` in `REGISTRY_ONLY` mode (exposing
+  only the `api.anthropic.com` ServiceEntry and the release namespace's artifact Service), matched by SNI. Two hard
+  requirements: **native sidecars** (Kubernetes ≥ 1.29 and istiod with `ENABLE_NATIVE_SIDECARS=true` — a classic sidecar
+  never terminates, hanging the Job, and blackholes the init container's artifact fetch), and the **Istio CNI node
+  agent** (the `restricted` PSS rejects `istio-init`'s NET_ADMIN/NET_RAW).
 
-Enabling both fails the chart render. If you have neither, drop the components — the base policy still applies and is
-then the whole of the L3/L4 story.
+The default, `mode: auto`, resolves this from the cluster's own API surface on every render against a live cluster, so
+one set of manifests can serve a GKE cluster and a Cilium cluster unmodified. It picks `gke` when the
+`FQDNNetworkPolicy` CRD is present, `cilium` when a real Cilium is (never on GKE, where a `CiliumNetworkPolicy` would
+enforce nothing while reading as protection), and nothing otherwise. It never picks `istio`: CRD presence says nothing
+about native sidecars. An off-cluster `helm template` sees no cluster and resolves to `none`.
+
+!!! danger "Network policies are additive"
+
+    A packet matching *any* policy that selects the pod is allowed, and no policy can subtract from another. So an FQDN
+    allowlist rendered next to a NetworkPolicy that already permits 443 to `0.0.0.0/0` constrains **nothing** — the
+    union is still "443 to anywhere". Whenever an FQDN layer is active the chart therefore drops that broad rule
+    (`agent.networkPolicy.broadEgress: auto`), and the kustomize components patch it out of the base policy. If you
+    assemble these by hand, do the same, or the fence is decorative. `broadEgress: always` keeps it deliberately while
+    soaking a newly enabled layer — a layer that turns out not to enforce then fails open rather than blackholing every
+    Job.
+
+Enabling both Cilium and Istio fails the chart render. If you have none of the three, the base policy still applies and
+is then the whole of the L3/L4 story.
 
 ### Why Cilium is preferred
 
-Both layers render the same allowlist, but they are not equivalent, and the prod overlay picks Cilium deliberately:
+All three render the same allowlist, but they are not equivalent, and the prod overlay picks Cilium deliberately (on GKE
+the choice is made for you — `gke` is the only one Dataplane V2 enforces):
 
 - **DNS exfiltration.** Istio enforces at the TCP/TLS layer, but the pod still needs UDP/53 to the cluster resolver, and
   the proxy does not constrain what names it may resolve. A prompt-injected agent can encode data into query names

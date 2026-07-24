@@ -87,12 +87,41 @@ labels; `helm uninstall` deletes it, killing any running agent Job). The isolati
    markdown. The agent ServiceAccount has no Role and its token is not mounted.
 2. **NetworkPolicy** (`agent.networkPolicy.create`) — default-deny both directions, re-permitting only DNS, the artifact
    server, and TCP 443 externally (the harness CLI → its model API), with `clusterCIDRs` excluded.
-3. **Hostname policy** (defence in depth) — enable exactly one of `agent.networkPolicy.cilium.enabled` (FQDN policy,
-   needs Cilium's DNS proxy) or `agent.networkPolicy.istio.enabled` (REGISTRY_ONLY sidecar, needs native sidecars + the
-   Istio CNI node agent). Either renders **one policy per enabled runner**, selecting that harness's pods by their
+3. **Hostname policy** (defence in depth) — `agent.networkPolicy.mode` picks the dialect the cluster can actually
+   enforce. Each renders **one policy per enabled runner**, selecting that harness's pods by their
    `patchy.bitwisemedia.uk/harness` label, so each reaches only its own model API (`agent.runners.<harness>.hosts` —
    `api.anthropic.com` for claude, `api.openai.com` for codex) plus the in-cluster artifact endpoint. No GitHub hosts,
    because the pod never talks to GitHub.
+
+| `mode`   | renders                                     | requires                                                                     |
+| -------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
+| `auto`   | whichever of the below the cluster supports | nothing — the default                                                        |
+| `gke`    | `FQDNNetworkPolicy` (networking.gke.io)     | GKE Dataplane V2 created/updated with `--enable-fqdn-network-policy`         |
+| `cilium` | `CiliumNetworkPolicy` with `toFQDNs`        | a real Cilium with DNS-based policy (the DNS proxy). **Not GKE** — see below |
+| `istio`  | `Sidecar` (REGISTRY_ONLY) + `ServiceEntry`  | native sidecars (`ENABLE_NATIVE_SIDECARS=true`) + the Istio CNI node agent   |
+| `none`   | nothing beyond the base NetworkPolicy       | —                                                                            |
+
+**`auto` detection.** Helm resolves `.Capabilities` against the live cluster on every `install`/`upgrade` and every
+helm-controller reconcile, so `auto` reads the API surface: `gke` when GKE's `FQDNNetworkPolicy` CRD is present (that
+CRD only exists once `--enable-fqdn-network-policy` is on, which is what makes the signal trustworthy), `cilium` when a
+real Cilium is, `none` otherwise. Two deliberate exclusions. It never selects `istio`, because CRD presence says nothing
+about native sidecars, without which the agent Job never completes. And it never selects `cilium` on GKE, because
+Dataplane V2 publishes cilium.io CRDs but has not honoured `CiliumNetworkPolicy` since 1.21.5-gke.1300 and rejects every
+L7 rule — a CNP there enforces nothing while reading as protection in `kubectl get`. Setting `mode: cilium` explicitly
+on GKE is trusted (a self-managed Cilium without Dataplane V2). An off-cluster `helm template` sees no cluster and
+resolves to `none`; pin `mode` when you need a deterministic render.
+
+**Why the base policy shrinks under an FQDN mode.** Network policies are **additive** — a packet matching _any_ policy
+that selects the pod is allowed, and no policy can subtract from another. A `CiliumNetworkPolicy` or `FQDNNetworkPolicy`
+naming `api.anthropic.com`, rendered next to a NetworkPolicy that already allows 443 to `0.0.0.0/0`, therefore
+constrains nothing: the union is still "443 to anywhere". So `agent.networkPolicy.broadEgress: auto` drops that broad
+rule under `cilium` and `gke`, and keeps it under `none` and `istio` (the sidecar enforces on SNI in a separate plane
+and still wants the L3 floor beneath it). Under `cilium` the whole `-agents-egress` policy goes, since the CNP itself
+grants DNS — through the proxy, which is what learns the resolved addresses — plus the artifact server and the model
+API. Under `gke` it stays minus the 443 rule, because an `FQDNNetworkPolicy` is egress-only and can name neither a
+resolver nor a ClusterIP Service. Set `broadEgress: always` to keep the broad rule while soaking a new mode: a mode that
+turns out not to be enforcing then fails open rather than blackholing every runner. The namespace default-deny is never
+dropped, so a missing CRD fails the sandbox closed.
 
 ## Values worth knowing
 
