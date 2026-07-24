@@ -96,3 +96,27 @@ func TestOpenAlert(t *testing.T) {
 		t.Errorf("OpenAlert() error = %v, want nil", err)
 	}
 }
+
+func TestOpenAlertAlreadyOpen(t *testing.T) {
+	mux, c := newFakeClient(t)
+	mux.HandleFunc("PATCH /repos/o/r/code-scanning/alerts/4", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(t, w, `{"message":"Alert is already open."}`)
+	})
+
+	if err := c.OpenAlert(context.Background(), testRepo, 4); err != nil {
+		t.Errorf("OpenAlert() on already-open alert = %v, want nil", err)
+	}
+}
+
+func TestOpenAlertOtherError(t *testing.T) {
+	mux, c := newFakeClient(t)
+	mux.HandleFunc("PATCH /repos/o/r/code-scanning/alerts/4", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(t, w, `{"message":"Alert cannot be reopened because it was fixed."}`)
+	})
+
+	if err := c.OpenAlert(context.Background(), testRepo, 4); err == nil {
+		t.Error("OpenAlert() on fixed alert = nil, want error")
+	}
+}
